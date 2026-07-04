@@ -1,0 +1,371 @@
+"""
+MASON AI - baslatma dosyasi
+Calistirmak icin:  python run.py   (konsolsuz: pythonw run.py)
+
+Argumanlar:
+    --show   Pencereyi gizli baslatma ayarina ragmen goster (masaustu "Ac" simgesi).
+"""
+import json
+import socket
+import sys
+import threading
+import time
+from pathlib import Path
+
+import webview
+
+from mason import agent, memory, planner, voice, wakeword
+from mason.config import load_config, save_config
+from mason.database import get_conn
+
+BASE_DIR = Path(__file__).resolve().parent
+UI_FILE = BASE_DIR / "ui" / "index.html"
+SHOW_FLAG = BASE_DIR / ".show.trigger"   # arka plandaki ornegi one getirme sinyali
+LOCK_PORT = 50573                         # tek ornek kilidi (localhost)
+
+window = None            # ana pencere (webview)
+tray_icon = None         # sistem tepsisi ikonu (pystray)
+listener = None          # wake word dinleyici (barge-in icin erisim gerek)
+_lock_sock = None        # tek ornek kilidi soketi (acik kalmali)
+_force_show = False      # --show ile baslatildiysa gizleme ayarini yok say
+_speaking_until = 0.0    # Mason konusurken kendini duymasin diye
+_last_reply_text = ""    # Mason'un su an okudugu cevap (barge-in self-trigger'i engeller)
+
+
+def _mark_speaking(text: str) -> None:
+    """TTS suresini kabaca tahmin et; o surede wake word dinleme sustur.
+    Bu sadece bir yedek tahmindir; UI ses bitince audio_ended() ile kesin
+    olarak temizler (boylece susturmadan sonra wake kilitli kalmaz)."""
+    global _speaking_until, _last_reply_text
+    _last_reply_text = text or ""
+    _speaking_until = time.time() + max(1.5, len(text) / 14)
+
+
+def _is_speaking() -> bool:
+    return time.time() < _speaking_until
+
+
+def _speaking_text() -> str:
+    return _last_reply_text
+
+
+class Api:
+    """JavaScript'in cagirabildigi Python fonksiyonlari (kopru)."""
+
+    def __init__(self):
+        self._recorder = voice.Recorder()
+
+    # ---- Chat ----
+    def send_message(self, text: str) -> dict:
+        text = (text or "").strip()
+        if not text:
+            return {"reply": "", "actions_done": [], "error": True}
+        return agent.chat(text, load_config())
+
+    def get_history(self) -> list:
+        return agent.get_history()
+
+    def clear_chat(self) -> dict:
+        """Sohbet gecmisini temizler. HAFIZA VE GOREVLER SILINMEZ."""
+        with get_conn() as conn:
+            conn.execute("DELETE FROM messages")
+        return {"ok": True}
+
+    def apply_forget(self, ids: list, password: str = "") -> dict:
+        """Sifre korumali hafiza silmeyi onaylar. UI, kullanicinin girdigi
+        sifreyle bunu cagirir; sifre dogruysa verilen hafiza id'leri silinir."""
+        cfg = load_config()
+        real = cfg.get("memory_password", "")
+        if real and (password or "") != real:
+            return {"ok": False, "error": "Şifre yanlış"}
+        count = 0
+        for i in (ids or []):
+            try:
+                memory.forget(int(i))
+                count += 1
+            except Exception:
+                continue
+        return {"ok": True, "count": count}
+
+    # ---- Yan panel verileri ----
+    def get_state(self) -> dict:
+        return {
+            "tasks": planner.list_tasks("all"),
+            "memory_tree": memory.memory_tree(),
+            "plans": planner.list_plans(),
+        }
+
+    def toggle_task(self, task_id: int, done: bool) -> dict:
+        planner.update_task(int(task_id), status="done" if done else "open")
+        return self.get_state()
+
+    # ---- Ayarlar ----
+    def get_settings(self) -> dict:
+        return load_config()
+
+    def save_settings(self, settings: dict) -> dict:
+        cfg = load_config()
+        cfg.update(settings or {})
+        save_config(cfg)
+        return cfg
+
+    # ---- Ses (Faz 2) ----
+    def voice_status(self) -> dict:
+        st = voice.status()
+        st["wake"] = wakeword.WAKEWORD_AVAILABLE and load_config().get("wake_word_enabled", True)
+        return st
+
+    def start_recording(self) -> dict:
+        try:
+            self._recorder.start()
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def stop_recording(self) -> dict:
+        """Kaydi durdurur ve konusmayi yaziya cevirir."""
+        try:
+            audio = self._recorder.stop()
+            text = voice.transcribe(audio, load_config())
+            return {"ok": True, "text": text}
+        except Exception as e:
+            return {"ok": False, "error": str(e), "text": ""}
+
+    def speak(self, text: str) -> dict:
+        """Metni sese cevirir; UI base64 mp3'u calar."""
+        try:
+            audio = voice.speak_to_base64(text, load_config())
+            _mark_speaking(text)
+            return {"ok": True, "audio_b64": audio}
+        except Exception as e:
+            return {"ok": False, "error": str(e), "audio_b64": ""}
+
+    def audio_ended(self) -> dict:
+        """UI, sesli cevap bittiginde (veya susturuldugunda) bunu cagirir.
+        Boylece 'Mason konusuyor' susturmasi ANINDA kalkar ve hemen ardindan
+        'hey mason' demek calisir (mute/unmute sonrasi kilit sorunu cozulur)."""
+        global _speaking_until, _last_reply_text
+        _speaking_until = 0.0
+        _last_reply_text = ""
+        return {"ok": True}
+
+
+# ---------- Tek ornek (ayni anda tek MASON) ----------
+
+def _acquire_single_instance() -> bool:
+    """localhost portuna baglanarak tek ornek kilidi al. Basarisizsa
+    (port dolu) baska bir MASON zaten calisiyor demektir."""
+    global _lock_sock
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", LOCK_PORT))
+        s.listen(1)
+        _lock_sock = s  # global tutulur ki uygulama boyunca acik kalsin
+        return True
+    except OSError:
+        try:
+            s.close()
+        except Exception:
+            pass
+        return False
+
+
+# ---------- Faz 3: "Hey Mason" ----------
+
+def _show_window() -> None:
+    try:
+        window.show()
+        window.maximize()  # tam ekran yap (zaten buyukse islem yapmaz -> titremez)
+    except Exception:
+        pass
+
+
+def _watch_show_trigger() -> None:
+    """Arka plandaki ornek, masaustu 'Ac' simgesinden gelen sinyali bekler:
+    .show.trigger dosyasi olusunca pencereyi one getir."""
+    while True:
+        try:
+            if SHOW_FLAG.exists():
+                try:
+                    SHOW_FLAG.unlink()
+                except Exception:
+                    pass
+                _show_window()
+        except Exception:
+            pass
+        time.sleep(0.5)
+
+
+def _js(code: str) -> None:
+    try:
+        window.evaluate_js(code)
+    except Exception:
+        pass
+
+
+def _on_wake_only() -> None:
+    """Uyandirildi (kelime veya alkis): pencereyi ac, 'Efendim?' de, komut bekle."""
+    _show_window()
+    _js("setState('listening')")
+    try:
+        audio = voice.speak_to_base64("Efendim?", load_config())
+        _mark_speaking("Efendim?")
+        _js(f"playB64({json.dumps(audio)})")
+    except Exception:
+        pass
+
+
+def _on_command(text: str) -> None:
+    """Sesli komut algilandi: chat'e isle, cevabi UI'a ve hoparlore gonder."""
+    _show_window()
+    _js(f"voiceUser({json.dumps(text)})")
+    result = agent.chat(text, load_config())
+    _js(f"voiceReply({json.dumps(result['reply'])}, "
+        f"{json.dumps(result['actions_done'])}, {json.dumps(result['error'])}, "
+        f"{json.dumps(result.get('pending_forget', []))})")
+
+
+def _on_wake_status(status: str) -> None:
+    """Wake word dinleyicisinin durumunu arayuze bildir."""
+    _js(f"setWakeStatus({json.dumps(status)})")
+
+
+def _on_interrupt() -> None:
+    """BARGE-IN: Mason konusurken 'hey mason' dendi -> konusmayi ANINDA kes,
+    susturmayi kaldir ve tekrar dinlemeye gec."""
+    global _speaking_until, _last_reply_text
+    _speaking_until = 0.0
+    _last_reply_text = ""
+    _js("stopSpeaking()")
+
+
+def _start_wake_listener() -> None:
+    global listener
+    cfg = load_config()
+    if cfg.get("wake_word_enabled", True) and wakeword.WAKEWORD_AVAILABLE:
+        listener = wakeword.WakeWordListener(
+            cfg, on_wake_only=_on_wake_only, on_command=_on_command,
+            is_suppressed=_is_speaking, on_status=_on_wake_status,
+            on_interrupt=_on_interrupt, get_speaking_text=_speaking_text,
+        )
+        listener.start()
+    else:
+        _on_wake_status("unavailable" if not wakeword.WAKEWORD_AVAILABLE else "disabled")
+
+
+# ---------- Sistem tepsisi (istege bagli: pystray + pillow) ----------
+
+def _start_tray() -> None:
+    """Tepsi ikonu: pencere kapatilinca Mason arka planda dinlemeye devam eder."""
+    global tray_icon
+    try:
+        import pystray
+        from PIL import Image, ImageDraw
+    except Exception:
+        return  # pystray kurulu degilse tepsi yok; normal kapanma gecerli
+
+    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.ellipse([8, 8, 56, 56], fill=(34, 211, 238, 255))   # camgobegi daire
+    d.ellipse([22, 22, 42, 42], fill=(10, 14, 20, 255))   # arc reactor merkezi
+
+    def show(icon, item):
+        _show_window()
+
+    def quit_app(icon, item):
+        icon.stop()
+        try:
+            window.destroy()
+        except Exception:
+            pass
+
+    tray_icon = pystray.Icon(
+        "mason", img, "MASON - dinliyor",
+        menu=pystray.Menu(
+            pystray.MenuItem("Goster", show, default=True),
+            pystray.MenuItem("Kapat", quit_app),
+        ),
+    )
+    tray_icon.run_detached()
+
+
+def _on_closing():
+    """Pencere kapatilirken uygulamayi kapatma; gizle ve arka planda
+    'hey mason' komutunu beklemeye devam et.
+
+    Tamamen kapatmak icin: masaustu 'MASON Kapat' simgesi veya tepsi > Kapat.
+    """
+    try:
+        window.hide()
+    except Exception:
+        pass
+    return False  # kapanmayi iptal et -> arka planda dinlemeye devam
+
+
+def _clear_chat_on_start() -> None:
+    """Her acilista temiz ekran: sohbet gecmisini sil. HAFIZA VE GOREVLER KALIR."""
+    try:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM messages")
+    except Exception:
+        pass
+
+
+def _backfill_embeddings_in_background():
+    """Eski hafizalara embedding ekler (uygulamayi yavaslatmadan)."""
+    try:
+        memory.backfill_embeddings(load_config())
+    except Exception:
+        pass
+
+
+def _on_started():
+    """Pencere acildiktan sonra arka plan servislerini baslat."""
+    try:
+        window.maximize()  # tam ekran (buyutulmus) baslat
+    except Exception:
+        pass
+    threading.Thread(target=_backfill_embeddings_in_background, daemon=True).start()
+    threading.Thread(target=_watch_show_trigger, daemon=True).start()
+    _start_tray()
+    _start_wake_listener()
+    # --show verilmediyse ve ayar gizli baslat ise: tepsiye gizlen (dinlemeye devam)
+    if load_config().get("start_hidden") and not _force_show:
+        try:
+            window.hide()
+        except Exception:
+            pass
+
+
+if __name__ == "__main__":
+    _force_show = "--show" in sys.argv
+
+    # Zaten calisan bir MASON var mi? Varsa yeni ornek acma.
+    if not _acquire_single_instance():
+        # Calisiyor: --show ise arka plandaki pencereyi one getir, sonra cik.
+        if _force_show:
+            try:
+                SHOW_FLAG.write_text("1", encoding="utf-8")
+            except Exception:
+                pass
+        sys.exit(0)
+
+    # Onceki oturumdan kalmis sinyal dosyasini temizle
+    try:
+        SHOW_FLAG.unlink()
+    except Exception:
+        pass
+
+    _clear_chat_on_start()  # temiz ekranla basla
+
+    window = webview.create_window(
+        title="MASON",
+        url=str(UI_FILE),
+        js_api=Api(),
+        width=1280,
+        height=820,
+        min_size=(900, 600),
+        background_color="#04070d",
+    )
+    window.events.closing += _on_closing
+    webview.start(_on_started)

@@ -1,0 +1,13 @@
+# Cekirdek (Faz 1 + 1.5)
+pywebview>=5.0
+requests>=2.31
+
+# Ses (Faz 2) - istege bagli: kurulmazsa Mason yine calisir, ses kapali olur
+faster-whisper>=1.0
+sounddevice>=0.4
+numpy>=1.26
+edge-tts>=6.1
+
+# "Hey Mason" + sistem tepsisi (Faz 3) - istege bagli
+pystray>=0.19
+pillow>=10.0

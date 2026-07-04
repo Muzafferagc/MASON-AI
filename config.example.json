@@ -1,0 +1,20 @@
+{
+  "provider": "gemini",
+  "gemini_api_key": "",
+  "gemini_model": "gemini-2.5-flash",
+  "ollama_url": "http://localhost:11434",
+  "ollama_model": "llama3.2",
+  "user_name": "Muzaffer",
+  "gemini_embedding_model": "gemini-embedding-001",
+  "ollama_embedding_model": "nomic-embed-text",
+  "whisper_model": "small",
+  "tts_voice": "tr-TR-AhmetNeural",
+  "tts_rate": "+22%",
+  "stt_language": "tr",
+  "voice_replies": true,
+  "wake_word_enabled": true,
+  "clap_enabled": true,
+  "start_hidden": true,
+  "memory_password": "",
+  "theme": "cyan"
+}

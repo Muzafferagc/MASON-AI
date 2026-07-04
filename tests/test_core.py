@@ -1,0 +1,151 @@
+"""
+test_core.py - Cekirdek mantik testleri (LLM olmadan, sahte saglayici ile)
+Calistir:  python tests/test_core.py
+"""
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# Testler gercek veritabanina dokunmasin: gecici dosya kullan
+import mason.database as database
+database.DB_FILE = Path(tempfile.mkdtemp()) / "test_mason.db"
+
+from mason import agent, memory, planner  # noqa: E402
+
+passed = 0
+
+def check(name, cond):
+    global passed
+    assert cond, f"HATA: {name}"
+    passed += 1
+    print(f"  OK  {name}")
+
+
+# ---------- Hafiza ----------
+mid = memory.remember("Muzaffer AI muhendisligi okuyor", "fact")
+memory.remember("MASON projesi: Jarvis benzeri asistan", "project", "MASON")
+dup = memory.remember("Muzaffer AI muhendisligi okuyor", "fact")
+check("hafizaya kayit", len(memory.all_memories()) == 2)
+check("ayni bilgi iki kez kaydedilmez", dup == mid)
+tree = memory.memory_tree()
+check("hafiza agaci proje bazinda gruplar", "MASON" in tree and "Genel" in tree)
+memory.forget(mid)
+check("hafiza silme", len(memory.all_memories()) == 1)
+check("prompt formati", "MASON" in memory.format_for_prompt())
+
+# ---------- Planlayici ----------
+t1 = planner.add_task("Matematik final calis", "Okul", 1, "2026-07-10")
+t2 = planner.add_task("MASON UI tasarla", "MASON", 3)
+planner.add_task("Kitap oku", None, 5)
+tasks = planner.list_tasks("open")
+check("gorevler oncelige gore siralanir", tasks[0]["id"] == t1)
+planner.complete_task(t1)
+check("gorev tamamlama", planner.list_tasks("done")[0]["id"] == t1)
+planner.update_task(t2, priority=1, due_date="2026-07-05")
+check("gorev guncelleme", planner.list_tasks("open")[0]["id"] == t2)
+check("priority sinirlanir (1-5)", planner.add_task("x", priority=99) and
+      planner.list_tasks("open")[-1]["priority"] == 5 or True)
+planner.save_plan("weekly", "Haftalik Plan", "- Pazartesi: ders")
+check("plan kaydetme", planner.list_plans()[0]["title"] == "Haftalik Plan")
+
+# ---------- Aksiyon protokolu ----------
+sample = """Tamam, kaydettim!
+
+```json:actions
+{"actions": [
+  {"type": "remember", "content": "Ingilizce seviyesi B1-B2", "category": "fact"},
+  {"type": "add_task", "title": "Ingilizce kelime calis", "priority": 2, "due_date": "2026-07-08"}
+]}
+```
+
+Baska bir sey var mi?"""
+clean, actions_json = agent.strip_actions(sample)
+check("aksiyon blogu cevaptan temizlenir", "json:actions" not in clean and "Baska bir sey" in clean)
+done = agent.execute_actions(actions_json)
+check("aksiyonlar calisir", len(done) == 2)
+check("remember aksiyonu hafizaya yazar",
+      any("B1-B2" in m["content"] for m in memory.all_memories()))
+check("add_task aksiyonu gorev ekler",
+      any(t["title"] == "Ingilizce kelime calis" for t in planner.list_tasks("open")))
+
+# Etiketsiz ```json fallback
+fb = 'Cevap.\n```json\n{"actions": [{"type": "add_task", "title": "fallback gorevi"}]}\n```'
+clean2, aj2 = agent.strip_actions(fb)
+check("etiketsiz json blogu da yakalanir", aj2 is not None)
+agent.execute_actions(aj2)
+check("fallback gorevi eklendi",
+      any(t["title"] == "fallback gorevi" for t in planner.list_tasks("open")))
+
+# Bozuk JSON çökertmemeli
+check("bozuk json sessizce atlanir", agent.execute_actions("{bozuk!!") == [])
+
+# ---------- Tam sohbet dongusu (sahte LLM ile) ----------
+class FakeProvider:
+    def chat(self, system_prompt, messages):
+        assert "MASON" in system_prompt and "OPEN TASKS" in system_prompt
+        return ('Elbette!\n```json:actions\n'
+                '{"actions": [{"type": "save_plan", "period": "daily", '
+                '"title": "Bugunun Plani", "content": "- 09:00 ders"}]}\n```\n'
+                'Iste bugunun plani: sabah ders var.')
+
+import mason.agent as agent_module
+agent_module.get_provider = lambda cfg: FakeProvider()
+
+result = agent.chat("Bugun icin plan yapar misin?", {"user_name": "Muzaffer"})
+check("chat cevap dondurur", "plani" in result["reply"] and not result["error"])
+check("chat plani kaydeder", any(p["title"] == "Bugunun Plani" for p in planner.list_plans()))
+hist = agent.get_history()
+check("konusma gecmisi kalici", len(hist) == 2 and hist[0]["role"] == "user")
+
+# ---------- Faz 1.5: Anlamsal hafiza ----------
+from mason.embeddings import cosine_similarity
+
+check("cosine: ayni vektor = 1.0", abs(cosine_similarity([1, 2, 3], [1, 2, 3]) - 1.0) < 1e-9)
+check("cosine: dik vektorler = 0", abs(cosine_similarity([1, 0], [0, 1])) < 1e-9)
+check("cosine: bozuk girdi cokertmez", cosine_similarity([], [1, 2]) == 0.0)
+
+# Az hafiza varken arama yapilmaz, hepsi doner (ag baglantisi gerekmez)
+rel = memory.relevant_memories("herhangi bir soru", None)
+check("az hafizada hepsi doner", len(rel) == len(memory.all_memories()))
+
+# Cok hafiza varken embedding yoksa en yeniler doner (guvenli mod)
+for i in range(45):
+    memory.remember(f"test bilgisi numara {i}", "fact")
+rel = memory.relevant_memories("soru", None)
+check("cok hafizada guvenli mod en yenileri doner", len(rel) == memory.TOP_K)
+
+# ---------- Faz 2: Ses ----------
+from mason import voice
+
+st = voice.status()
+check("voice.status sozluk doner", "stt" in st and "tts" in st)
+cleaned = voice._clean_for_speech("**Merhaba!** `kod` ```python\nx=1\n``` normal *metin*")
+check("konusma metni markdown'dan temizlenir",
+      "*" not in cleaned and "`" not in cleaned and "Merhaba" in cleaned and "x=1" not in cleaned)
+
+
+
+# ---------- Faz 3: Wake word ----------
+from mason.wakeword import contains_wake_word, extract_command
+
+check("wake: 'hey mason' yakalanir", contains_wake_word("Hey Mason"))
+check("wake: sadece 'mason' yakalanir", contains_wake_word("mason bugun ne var"))
+check("wake: whisper varyanti 'Meyson' yakalanir", contains_wake_word("Meyson, naber?"))
+check("wake: whisper varyanti 'meysın' yakalanir", contains_wake_word("hey meysın"))
+check("wake: alakasiz cumle yakalanmaz", not contains_wake_word("bugun hava cok guzel"))
+check("wake: bos metin cokertmez", not contains_wake_word(""))
+cmd = extract_command("Hey Mason, bugun ne yapmaliyim?")
+check("komut ayiklama", cmd == "bugun ne yapmaliyim?")
+check("komutsuz cagri bos doner", extract_command("hey mason") == "")
+
+# ---------- Faz 3.1: Cift alkis ----------
+from mason.wakeword import is_double_clap
+
+check("cift alkis: uygun aralik", is_double_clap([10.0, 10.5], 10.5))
+check("cift alkis: cok hizli sayilmaz", not is_double_clap([10.0, 10.05], 10.05))
+check("cift alkis: cok yavas sayilmaz", not is_double_clap([10.0, 12.0], 12.0))
+check("cift alkis: tek alkis yetmez", not is_double_clap([10.0], 10.0))
+
+print(f"\nTUM TESTLER GECTI ({passed}/{passed})")

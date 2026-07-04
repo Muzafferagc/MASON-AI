@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>MASON</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #020509;
+    --panel: rgba(10, 20, 34, .5);
+    --panel-solid: #0a1420;
+    --line: rgba(0, 229, 255, .14);
+    --line-strong: rgba(0, 229, 255, .5);
+    --cyan: #00e5ff;
+    --cyan-soft: rgba(0, 229, 255, .1);
+    --cyan-dim: #0a7c8f;
+    --gold: #ffc857;
+    --violet: #7c6cff;
+    --text: #d9ecf7;
+    --muted: #4f7089;
+    --danger: #ff5c72;
+    --ok: #2dffb3;
+    --amp: 0;
+    --hud: 'Orbitron', sans-serif;
+    --body: 'Rajdhani', 'Segoe UI', sans-serif;
+    --mono: 'Share Tech Mono', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--body); font-size: 16px;
+    overflow: hidden; position: relative;
+  }
+  ::selection { background: rgba(0,229,255,.25); }
+
+  /* ================= BOOT EKRANI ================= */
+  #boot {
+    position: fixed; inset: 0; z-index: 100; background: #010306;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    transition: opacity .7s; cursor: pointer;
+  }
+  #boot.hide { opacity: 0; pointer-events: none; }
+  #boot-logo { font-family: var(--hud); font-size: 42px; font-weight: 900; letter-spacing: 22px; color: var(--cyan); text-shadow: 0 0 40px var(--cyan); margin-bottom: 6px; animation: bootGlow 2s ease-in-out infinite; }
+  @keyframes bootGlow { 0%,100% { text-shadow: 0 0 25px var(--cyan); } 50% { text-shadow: 0 0 60px var(--cyan), 0 0 120px rgba(0,229,255,.5); } }
+  #boot-sub { font-family: var(--hud); font-size: 10px; letter-spacing: 8px; color: var(--muted); margin-bottom: 38px; }
+  #boot-lines { font-family: var(--mono); font-size: 13px; color: var(--cyan-dim); min-height: 130px; width: 380px; line-height: 1.9; }
+  #boot-lines .ok { color: var(--ok); }
+  #boot-bar { width: 380px; height: 2px; background: rgba(0,229,255,.12); margin-top: 20px; }
+  #boot-bar i { display: block; height: 100%; width: 0%; background: var(--cyan); box-shadow: 0 0 12px var(--cyan); transition: width .3s; }
+
+  /* ================= ARKAPLAN ================= */
+  #bg { position: fixed; inset: 0; z-index: 0; }
+  .nebula {
+    position: fixed; inset: -20%; z-index: 0; pointer-events: none; filter: blur(60px);
+    background:
+      radial-gradient(ellipse 40% 30% at 20% 25%, rgba(124,108,255,.07), transparent),
+      radial-gradient(ellipse 45% 35% at 80% 70%, rgba(0,229,255,.06), transparent),
+      radial-gradient(ellipse 30% 25% at 60% 15%, rgba(0,150,255,.05), transparent);
+    animation: nebulaDrift 40s ease-in-out infinite alternate;
+  }
+  @keyframes nebulaDrift { to { transform: translate(3%, -2%) scale(1.06); } }
+  .mega-ring {
+    position: fixed; z-index: 0; pointer-events: none; border-radius: 50%;
+    border: 1px solid rgba(0,229,255,.05);
+  }
+  .mega-ring.a { width: 130vh; height: 130vh; left: 50%; top: 8%; transform: translateX(-50%); border-top-color: rgba(0,229,255,.14); animation: spin 90s linear infinite; }
+  .mega-ring.b { width: 100vh; height: 100vh; left: 50%; top: 22%; transform: translateX(-50%); border-bottom-color: rgba(255,200,87,.08); border-style: dashed; animation: spinRev 120s linear infinite; }
+  .grid-overlay {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      linear-gradient(rgba(0,229,255,.022) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,.022) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse at 50% 35%, black 25%, transparent 78%);
+  }
+  .sweep {
+    position: fixed; left: 0; right: 0; height: 140px; z-index: 1; pointer-events: none;
+    background: linear-gradient(180deg, transparent, rgba(0,229,255,.025), transparent);
+    animation: sweepDown 9s linear infinite;
+  }
+  @keyframes sweepDown { from { top: -20%; } to { top: 115%; } }
+  .vignette { position: fixed; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(ellipse at center, transparent 52%, rgba(1,2,5,.9) 100%); }
+
+  #app { position: relative; z-index: 2; height: 100vh; display: flex; flex-direction: column; opacity: 0; transition: opacity .8s; }
+  #app.ready { opacity: 1; }
+
+  /* ================= UST BAR ================= */
+  #topbar {
+    display: flex; align-items: stretch; gap: 0; height: 58px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(6,12,22,.95), rgba(6,12,22,.55));
+    backdrop-filter: blur(8px);
+  }
+  .tb-cell { display: flex; align-items: center; padding: 0 18px; border-right: 1px solid var(--line); }
+  .logo { gap: 13px; }
+  .logo-mark { width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle, #eafdff 0%, var(--cyan) 38%, #033b46 80%); box-shadow: 0 0 16px var(--cyan); animation: corePulse 3s ease-in-out infinite; flex-shrink: 0; }
+  .logo h1 { font-family: var(--hud); font-size: 17px; letter-spacing: 7px; color: var(--cyan); font-weight: 800; }
+  .logo .sub { font-size: 9.5px; letter-spacing: 3.5px; color: var(--muted); font-family: var(--hud); }
+  .readouts { flex: 1; display: flex; justify-content: center; gap: 34px; border-right: 1px solid var(--line); }
+  .readout { text-align: center; align-self: center; }
+  .readout .lbl { font-size: 8.5px; letter-spacing: 3px; color: var(--muted); font-family: var(--hud); }
+  .readout .val { font-family: var(--mono); font-size: 15px; color: var(--cyan); letter-spacing: 1px; }
+  .readout .val.gold { color: var(--gold); }
+
+  .chip { display: inline-flex; align-items: center; gap: 7px; font-family: var(--hud); font-size: 9px; letter-spacing: 2px; padding: 5px 11px; border: 1px solid var(--line); color: var(--muted); }
+  .chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+  .chip.on { color: var(--cyan); border-color: var(--line-strong); background: var(--cyan-soft); }
+  .chip.on .dot { background: var(--cyan); box-shadow: 0 0 9px var(--cyan); animation: blinkDot 1.8s infinite; }
+  .chip.warn { color: var(--gold); }
+  .chip.warn .dot { background: var(--gold); animation: blinkDot .8s infinite; }
+  @keyframes blinkDot { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+
+  .tb-actions { gap: 8px; border-right: none; }
+  .hud-btn {
+    background: none; border: 1px solid var(--line); color: var(--muted);
+    padding: 8px 14px; cursor: pointer; font-size: 15px; transition: .25s; font-family: var(--hud);
+    clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  }
+  .hud-btn:hover:not(:disabled) { color: var(--cyan); border-color: var(--line-strong); background: var(--cyan-soft); text-shadow: 0 0 10px var(--cyan); }
+  .hud-btn:disabled { opacity: .28; cursor: default; }
+  .hud-btn.on { color: var(--cyan); border-color: var(--line-strong); }
+  .hud-btn.sm { font-size: 10px; letter-spacing: 2px; }
+
+  /* ================= ANA ================= */
+  main { flex: 1; display: flex; min-height: 0; }
+
+  /* ---- SOL RAY: canli istatistikler ---- */
+  #rail {
+    width: 78px; border-right: 1px solid var(--line); padding: 18px 0;
+    display: flex; flex-direction: column; align-items: center; gap: 22px;
+    background: linear-gradient(90deg, rgba(6,12,22,.7), rgba(6,12,22,.3));
+  }
+  .stat { text-align: center; }
+  .stat .num { font-family: var(--hud); font-size: 20px; font-weight: 700; color: var(--cyan); text-shadow: 0 0 14px rgba(0,229,255,.5); }
+  .stat .cap { font-size: 8px; letter-spacing: 2px; color: var(--muted); font-family: var(--hud); margin-top: 2px; }
+  .stat .bar { width: 40px; height: 2px; background: rgba(0,229,255,.12); margin: 6px auto 0; overflow: hidden; }
+  .stat .bar i { display: block; height: 100%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); animation: statBar 3s ease-in-out infinite alternate; }
+  @keyframes statBar { from { width: 30%; } to { width: 90%; } }
+  #rail .sep { width: 30px; height: 1px; background: var(--line); }
+  .rail-deco { flex: 1; width: 2px; background: linear-gradient(180deg, transparent, rgba(0,229,255,.2), transparent); }
+
+  /* ---- ORTA: orb + chat ---- */
+  #chat-col { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+
+  #orb-zone { position: relative; display: flex; flex-direction: column; align-items: center; padding: 10px 0 2px; flex-shrink: 0; }
+  #viz { position: absolute; top: -28px; width: 260px; height: 260px; pointer-events: none; }
+  #orb { position: relative; width: 110px; height: 110px; margin-top: 24px; transform: scale(calc(1 + var(--amp) * 0.22)); transition: transform .07s linear; }
+  #orb .ring { position: absolute; border-radius: 50%; border: 1.5px solid transparent; }
+  #orb .r1 { inset: 0; border-top-color: var(--cyan); border-right-color: rgba(0,229,255,.25); animation: spin 5s linear infinite; }
+  #orb .r2 { inset: 11px; border-bottom-color: var(--cyan); border-left-color: rgba(0,229,255,.2); animation: spinRev 3.4s linear infinite; }
+  #orb .r3 { inset: 22px; border-top-color: rgba(255,200,87,.65); animation: spin 8s linear infinite; }
+  #orb .core {
+    position: absolute; inset: 31px; border-radius: 50%;
+    background: radial-gradient(circle, #f2feff 0%, var(--cyan) 42%, #044552 78%, transparent 100%);
+    box-shadow: 0 0 calc(26px + var(--amp) * 70px) var(--cyan), 0 0 calc(70px + var(--amp) * 110px) rgba(0,229,255,.35);
+    animation: corePulse 3s ease-in-out infinite;
+  }
+  #orb .hex { position: absolute; inset: -14px; border-radius: 50%; border: 1px dashed rgba(0,229,255,.14); animation: spinRev 26s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes spinRev { to { transform: rotate(-360deg); } }
+  @keyframes corePulse { 0%,100% { opacity: .88; } 50% { opacity: 1; } }
+
+  body.state-listening #orb .r1 { animation-duration: 1s; }
+  body.state-listening #orb .r2 { animation-duration: .7s; }
+  body.state-listening #orb .core { background: radial-gradient(circle, #fff 0%, var(--ok) 42%, #04543c 78%, transparent 100%); box-shadow: 0 0 40px var(--ok), 0 0 100px rgba(45,255,179,.35); }
+  body.state-thinking #orb .r1 { animation-duration: .55s; }
+  body.state-thinking #orb .r2 { animation-duration: .4s; }
+  body.state-thinking #orb .r3 { animation-duration: 1.1s; border-top-color: var(--violet); }
+  body.state-speaking #orb .r3 { border-top-color: var(--gold); }
+
+  #status-line { margin-top: 12px; font-family: var(--hud); font-size: 11px; letter-spacing: 6px; color: var(--cyan); min-height: 15px; text-shadow: 0 0 14px rgba(0,229,255,.6); }
+  body.state-listening #status-line { color: var(--ok); text-shadow: 0 0 14px rgba(45,255,179,.6); }
+  body.state-thinking #status-line { color: var(--violet); }
+  #status-line::after { content: "▊"; font-size: 9px; margin-left: 6px; animation: blinkDot 1s infinite; }
+
+  /* ---- MESAJLAR ---- */
+  #messages { flex: 1; overflow-y: auto; padding: 16px 7% 22px; display: flex; flex-direction: column; gap: 18px; scroll-behavior: smooth; }
+  #messages::-webkit-scrollbar { width: 4px; }
+  #messages::-webkit-scrollbar-thumb { background: var(--cyan-dim); }
+
+  .msg { max-width: 76%; padding: 14px 20px 15px; position: relative; line-height: 1.62; white-space: pre-wrap; word-wrap: break-word; background: var(--panel); backdrop-filter: blur(6px); animation: msgIn .4s cubic-bezier(.2,.9,.3,1.15); }
+  @keyframes msgIn { from { opacity: 0; transform: translateY(16px); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+  /* kose braketleri */
+  .msg::before, .msg::after { content: ""; position: absolute; width: 14px; height: 14px; transition: .3s; }
+  .msg.assistant { align-self: flex-start; border: 1px solid var(--line); border-left: 2px solid var(--cyan); box-shadow: inset 0 0 50px rgba(0,229,255,.03), 0 4px 24px rgba(0,0,0,.35); }
+  .msg.assistant::before { top: -1px; right: -1px; border-top: 1.5px solid var(--cyan); border-right: 1.5px solid var(--cyan); }
+  .msg.assistant::after { bottom: -1px; left: 10px; border-bottom: 1.5px solid rgba(0,229,255,.4); border-left: none; width: 26px; height: 1px; }
+  .msg.user { align-self: flex-end; border: 1px solid rgba(255,200,87,.18); border-right: 2px solid var(--gold); background: rgba(28,22,8,.42); box-shadow: 0 4px 24px rgba(0,0,0,.35); }
+  .msg.user::before { top: -1px; left: -1px; border-top: 1.5px solid var(--gold); border-left: 1.5px solid var(--gold); }
+  .msg.assistant.error { border-left-color: var(--danger); color: var(--danger); }
+  .msg .who { font-family: var(--hud); font-size: 9px; letter-spacing: 3px; color: var(--cyan); margin-bottom: 7px; display: flex; gap: 10px; align-items: center; }
+  .msg.user .who { color: var(--gold); justify-content: flex-end; }
+  .msg .who .t { color: var(--muted); font-family: var(--mono); font-size: 10px; letter-spacing: 0; }
+  .msg b { color: #fff; } .msg i { color: #9fdcec; }
+  .msg code { background: rgba(0,229,255,.08); border: 1px solid rgba(0,229,255,.15); padding: 1px 7px; font-family: var(--mono); font-size: 13px; }
+
+  .sys-note { align-self: flex-start; font-family: var(--mono); font-size: 11.5px; color: var(--ok); padding: 4px 12px; border-left: 2px solid var(--ok); background: rgba(45,255,179,.05); animation: msgIn .3s; }
+
+  /* ---- GIRIS ---- */
+  #input-bar { display: flex; gap: 10px; padding: 14px 7% 20px; align-items: flex-end; border-top: 1px solid var(--line); background: linear-gradient(0deg, rgba(6,12,22,.95), rgba(6,12,22,.3)); position: relative; }
+  #input-bar::before { content: "❯"; position: absolute; left: calc(7% + 16px); bottom: 34px; color: var(--cyan); font-family: var(--mono); font-size: 15px; pointer-events: none; animation: blinkDot 1.6s infinite; }
+  #input {
+    flex: 1; background: rgba(4, 10, 18, .85); border: 1px solid var(--line);
+    color: var(--text); padding: 14px 18px 14px 38px; font-size: 16px; font-family: var(--body); font-weight: 500;
+    resize: none; max-height: 140px; outline: none; transition: .3s;
+    clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  }
+  #input:focus { border-color: var(--line-strong); box-shadow: 0 0 24px rgba(0,229,255,.08), inset 0 0 20px rgba(0,229,255,.03); }
+  #mic, #send {
+    border: 1px solid var(--line); background: rgba(4,10,18,.85); color: var(--muted);
+    padding: 13px 18px; font-size: 16px; cursor: pointer; transition: .25s; font-family: var(--hud);
+    clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  }
+  #send { color: var(--cyan); font-size: 11px; letter-spacing: 3px; padding: 15px 24px; font-weight: 700; }
+  #mic:hover:not(:disabled), #send:hover:not(:disabled) { border-color: var(--line-strong); box-shadow: 0 0 18px rgba(0,229,255,.15); color: var(--cyan); background: var(--cyan-soft); }
+  #send:disabled, #mic:disabled { opacity: .3; cursor: default; }
+  #mic.recording { color: #fff; background: rgba(150,20,40,.75); border-color: var(--danger); animation: recPulse 1s infinite; }
+  @keyframes recPulse { 0%,100% { box-shadow: 0 0 8px rgba(255,92,114,.6); } 50% { box-shadow: 0 0 26px rgba(255,92,114,1); } }
+
+  /* ================= SAG PANEL ================= */
+  #sidebar { width: 350px; border-left: 1px solid var(--line); background: linear-gradient(270deg, rgba(6,12,22,.85), rgba(6,12,22,.45)); backdrop-filter: blur(8px); display: flex; flex-direction: column; min-height: 0; }
+  #tabs { display: flex; border-bottom: 1px solid var(--line); }
+  #tabs button { flex: 1; background: none; border: none; color: var(--muted); padding: 15px 0 13px; cursor: pointer; font-size: 10px; font-family: var(--hud); letter-spacing: 2px; border-bottom: 2px solid transparent; transition: .3s; position: relative; }
+  #tabs button .cnt { font-family: var(--mono); color: var(--cyan-dim); margin-left: 4px; }
+  #tabs button.active { color: var(--cyan); border-bottom-color: var(--cyan); text-shadow: 0 0 12px var(--cyan); background: linear-gradient(0deg, rgba(0,229,255,.05), transparent); }
+  #tabs button.active .cnt { color: var(--cyan); }
+  #panel { flex: 1; overflow-y: auto; padding: 16px 14px; }
+  #panel::-webkit-scrollbar { width: 4px; }
+  #panel::-webkit-scrollbar-thumb { background: var(--cyan-dim); }
+
+  .task-item { display: flex; gap: 10px; align-items: flex-start; padding: 12px 13px; background: var(--panel); border: 1px solid var(--line); margin-bottom: 9px; transition: .25s; animation: msgIn .3s; clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
+  .task-item:hover { border-color: var(--line-strong); background: rgba(0,229,255,.04); }
+  .task-item.done { opacity: .35; }
+  .task-item .t-title { font-size: 14.5px; font-weight: 600; }
+  .task-item .t-meta { font-size: 11.5px; color: var(--muted); margin-top: 3px; font-family: var(--mono); }
+  .prio { font-family: var(--hud); font-size: 8.5px; padding: 3px 7px; font-weight: 700; flex-shrink: 0; margin-top: 2px; border: 1px solid; }
+  .p1 { color: #ff8f9e; border-color: rgba(255,92,114,.5); background: rgba(255,92,114,.1); box-shadow: 0 0 10px rgba(255,92,114,.15); }
+  .p2 { color: var(--gold); border-color: rgba(255,200,87,.45); background: rgba(255,200,87,.08); }
+  .p3 { color: #7fc9ff; border-color: rgba(127,201,255,.4); background: rgba(127,201,255,.08); }
+  .p4, .p5 { color: var(--muted); border-color: rgba(79,112,137,.4); }
+  .task-item input[type=checkbox] { margin-top: 5px; accent-color: var(--cyan); }
+
+  .mem-project { margin-bottom: 18px; animation: msgIn .3s; }
+  .mem-project > .branch { color: var(--cyan); font-family: var(--hud); font-size: 10px; letter-spacing: 2.5px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .mem-project > .branch::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line-strong), transparent); }
+  .mem-leaf { font-size: 13.5px; padding: 9px 11px 9px 15px; margin: 0 0 7px 7px; border-left: 2px solid var(--cyan-dim); background: var(--panel); position: relative; }
+  .mem-leaf::before { content: ""; position: absolute; left: -2px; top: 0; height: 12px; width: 2px; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+  .mem-leaf .cat { color: var(--muted); font-size: 9.5px; font-family: var(--mono); }
+
+  .plan-item { background: var(--panel); border: 1px solid var(--line); padding: 13px 15px; margin-bottom: 10px; animation: msgIn .3s; clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
+  .plan-item .p-title { color: var(--cyan); font-size: 13.5px; font-weight: 600; cursor: pointer; letter-spacing: .5px; }
+  .plan-item .p-meta { font-size: 10.5px; color: var(--muted); margin: 4px 0 6px; font-family: var(--mono); }
+  .plan-item .p-body { font-size: 13.5px; white-space: pre-wrap; display: none; line-height: 1.55; }
+  .plan-item.open .p-body { display: block; }
+  .empty { color: var(--muted); font-size: 13px; text-align: center; margin-top: 40px; line-height: 2; letter-spacing: 1px; font-family: var(--hud); font-size: 10px; }
+
+  /* ================= MODAL ================= */
+  #modal-bg { display: none; position: fixed; inset: 0; background: rgba(1,3,6,.8); align-items: center; justify-content: center; z-index: 50; backdrop-filter: blur(6px); }
+  #modal-bg.show { display: flex; }
+  #modal { background: var(--panel-solid); border: 1px solid var(--line-strong); padding: 30px; width: 480px; max-width: 92vw; max-height: 88vh; overflow-y: auto; clip-path: polygon(20px 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%, 0 20px); box-shadow: 0 0 80px rgba(0,229,255,.12); }
+  #modal::-webkit-scrollbar { width: 4px; }
+  #modal::-webkit-scrollbar-thumb { background: var(--cyan-dim); }
+  #modal h2 { color: var(--cyan); font-family: var(--hud); font-size: 13px; letter-spacing: 5px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+  #modal h2::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line-strong), transparent); }
+  #modal label { display: block; font-size: 10px; color: var(--muted); margin: 14px 0 5px; letter-spacing: 2px; font-family: var(--hud); }
+  #modal input, #modal select { width: 100%; background: rgba(3,8,15,.9); border: 1px solid var(--line); color: var(--text); padding: 10px 13px; font-size: 14.5px; outline: none; font-family: var(--body); font-weight: 500; }
+  #modal input:focus, #modal select:focus { border-color: var(--line-strong); box-shadow: 0 0 14px rgba(0,229,255,.08); }
+  #modal .hint { font-size: 11.5px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+  #modal .hint a { color: var(--cyan); }
+  #modal .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 26px; }
+  #modal .duo { display: flex; gap: 10px; }
+  #modal .duo > div { flex: 1; }
+  .btn { border: 1px solid var(--line); background: none; padding: 11px 22px; cursor: pointer; font-size: 10.5px; font-family: var(--hud); letter-spacing: 2.5px; transition: .25s; clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px); }
+  .btn.primary { color: var(--cyan); border-color: var(--line-strong); }
+  .btn.primary:hover { box-shadow: 0 0 20px rgba(0,229,255,.2); background: var(--cyan-soft); }
+  .btn.ghost { color: var(--muted); }
+  .provider-fields { display: none; }
+  .provider-fields.show { display: block; }
+  .check-row { display: flex !important; align-items: center; gap: 10px; cursor: pointer; font-size: 13.5px !important; color: var(--text) !important; letter-spacing: .5px !important; font-family: var(--body) !important; font-weight: 500; }
+  .check-row input { width: auto !important; accent-color: var(--cyan); }
+</style>
+</head>
+<body class="state-idle">
+
+<div id="boot">
+  <div id="boot-logo">MASON</div>
+  <div id="boot-sub">OS v2.0 — PERSONAL AI SYSTEM</div>
+  <div id="boot-lines"></div>
+  <div id="boot-bar"><i id="boot-fill"></i></div>
+</div>
+
+<canvas id="bg"></canvas>
+<div class="nebula"></div>
+<div class="mega-ring a"></div>
+<div class="mega-ring b"></div>
+<div class="grid-overlay"></div>
+<div class="sweep"></div>
+<div class="vignette"></div>
+
+<div id="app">
+  <div id="topbar">
+    <div class="tb-cell logo">
+      <div class="logo-mark"></div>
+      <div>
+        <h1>MASON</h1>
+        <div class="sub">v2.0 ONLINE</div>
+      </div>
+    </div>
+    <div class="tb-cell readouts">
+      <div class="readout"><div class="lbl">TARİH</div><div class="val" id="ro-date">--</div></div>
+      <div class="readout"><div class="lbl">SAAT</div><div class="val gold" id="ro-time">--:--:--</div></div>
+      <div class="readout"><div class="lbl">SES ALGILAMA</div><div class="val"><span class="chip" id="wake-chip"><span class="dot"></span><span id="wake-txt">BAŞLATILIYOR</span></span></div></div>
+    </div>
+    <div class="tb-cell tb-actions">
+      <button class="hud-btn sm" id="clear-btn" title="Yeni sohbet (hafıza ve görevler silinmez)">⌦ YENİ</button>
+      <button class="hud-btn" id="voice-toggle" title="Sesli yanıt aç/kapat">🔊</button>
+      <button class="hud-btn" id="settings-btn" title="Ayarlar">⚙</button>
+    </div>
+  </div>
+
+  <main>
+    <div id="rail">
+      <div class="stat"><div class="num" id="st-mem">0</div><div class="cap">HAFIZA</div><div class="bar"><i></i></div></div>
+      <div class="sep"></div>
+      <div class="stat"><div class="num" id="st-task">0</div><div class="cap">GÖREV</div><div class="bar"><i style="animation-delay:.7s"></i></div></div>
+      <div class="sep"></div>
+      <div class="stat"><div class="num" id="st-plan">0</div><div class="cap">PLAN</div><div class="bar"><i style="animation-delay:1.4s"></i></div></div>
+      <div class="rail-deco"></div>
+    </div>
+
+    <div id="chat-col">
+      <div id="orb-zone">
+        <canvas id="viz" width="260" height="260"></canvas>
+        <div id="orb">
+          <div class="hex"></div>
+          <div class="ring r1"></div>
+          <div class="ring r2"></div>
+          <div class="ring r3"></div>
+          <div class="core"></div>
+        </div>
+        <div id="status-line">ÇEVRİMİÇİ</div>
+      </div>
+
+      <div id="messages"></div>
+
+      <div id="input-bar">
+        <textarea id="input" rows="1" placeholder="Komut gir veya 'Hey Mason' de..."></textarea>
+        <button id="mic" title="Konuşmak için tıkla, bitince tekrar tıkla">🎤</button>
+        <button id="send">GÖNDER</button>
+      </div>
+    </div>
+
+    <div id="sidebar">
+      <div id="tabs">
+        <button data-tab="tasks" class="active">GÖREVLER<span class="cnt" id="c-task"></span></button>
+        <button data-tab="memory">HAFIZA<span class="cnt" id="c-mem"></span></button>
+        <button data-tab="plans">PLANLAR<span class="cnt" id="c-plan"></span></button>
+      </div>
+      <div id="panel"></div>
+    </div>
+  </main>
+</div>
+
+<div id="modal-bg">
+  <div id="modal">
+    <h2>SİSTEM AYARLARI</h2>
+    <label>YAPAY ZEKA MOTORU</label>
+    <select id="s-provider">
+      <option value="gemini">Gemini API (bulut, ücretsiz kota)</option>
+      <option value="ollama">Ollama (yerel, tamamen ücretsiz)</option>
+    </select>
+
+    <div id="f-gemini" class="provider-fields">
+      <label>GEMINI API ANAHTARI</label>
+      <input id="s-gemini-key" type="password" placeholder="AIza...">
+      <div class="hint">Ücretsiz anahtar: <a href="https://aistudio.google.com" target="_blank">aistudio.google.com</a></div>
+      <label>MODEL</label>
+      <input id="s-gemini-model" placeholder="gemini-2.5-flash">
+    </div>
+
+    <div id="f-ollama" class="provider-fields">
+      <label>OLLAMA ADRESİ</label>
+      <input id="s-ollama-url" placeholder="http://localhost:11434">
+      <label>MODEL</label>
+      <input id="s-ollama-model" placeholder="llama3.2">
+    </div>
+
+    <label>ADIN</label>
+    <input id="s-name" placeholder="Muzaffer">
+
+    <label>MASON'UN SESİ</label>
+    <select id="s-tts-voice">
+      <option value="en-US-AndrewMultilingualNeural">Andrew — çok dilli, Jarvis havası (önerilen)</option>
+      <option value="en-US-BrianMultilingualNeural">Brian — derin, çok dilli</option>
+      <option value="en-US-AvaMultilingualNeural">Ava — kadın, çok dilli</option>
+      <option value="tr-TR-AhmetNeural">Ahmet — Türkçe erkek (klasik)</option>
+      <option value="tr-TR-EmelNeural">Emel — Türkçe kadın</option>
+    </select>
+
+    <div class="duo">
+      <div>
+        <label>OKUMA HIZI</label>
+        <select id="s-tts-rate">
+          <option value="+0%">Normal</option>
+          <option value="+10%">Hızlı (+10%)</option>
+          <option value="+18%">Daha hızlı (+18%)</option>
+          <option value="+30%">Çok hızlı (+30%)</option>
+          <option value="+45%">Ekspres (+45%)</option>
+        </select>
+      </div>
+      <div>
+        <label>KONUŞMA DİLİN</label>
+        <select id="s-stt-lang">
+          <option value="tr">Türkçe (önerilen)</option>
+          <option value="en">İngilizce</option>
+          <option value="auto">Otomatik algıla</option>
+        </select>
+      </div>
+    </div>
+
+    <label>WHISPER MODELİ (ses tanıma)</label>
+    <input id="s-whisper" placeholder="small">
+    <div class="hint">tiny → base → small (önerilen) → medium. İlk kullanımda indirilir.</div>
+
+    <label class="check-row"><input type="checkbox" id="s-wake"> "Hey Mason" ile uyanma</label>
+    <label class="check-row"><input type="checkbox" id="s-clap"> Çift alkış ile uyanma</label>
+    <label class="check-row"><input type="checkbox" id="s-hidden"> Gizli başla (tepside bekle)</label>
+    <div class="hint">Bu ayarlar uygulama yeniden başlatılınca etkili olur.</div>
+
+    <div class="row">
+      <button class="btn ghost" id="s-cancel">VAZGEÇ</button>
+      <button class="btn primary" id="s-save">KAYDET</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const messagesEl = $("messages"), inputEl = $("input"), sendBtn = $("send");
+let activeTab = "tasks", state = { tasks: [], memory_tree: {}, plans: [] };
+
+function apiReady() {
+  return new Promise((resolve) => {
+    if (window.pywebview && window.pywebview.api) return resolve();
+    window.addEventListener("pywebviewready", () => resolve());
+  });
+}
+
+/* ============ UI SES EFEKTLERI (kisa bip'ler) ============ */
+let fxCtx = null;
+function blip(freq, dur = 0.07, vol = 0.035, type = "sine") {
+  try {
+    if (!fxCtx) fxCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = fxCtx.createOscillator(), g = fxCtx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, fxCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, fxCtx.currentTime + dur);
+    o.connect(g); g.connect(fxCtx.destination);
+    o.start(); o.stop(fxCtx.currentTime + dur);
+  } catch (e) {}
+}
+const fxSend = () => { blip(880, .05); setTimeout(() => blip(1320, .06), 50); };
+const fxReply = () => blip(620, .08);
+const fxWake = () => { blip(520, .07); setTimeout(() => blip(780, .09), 80); };
+
+/* ============ DURUM MAKINESI ============ */
+const STATUS_TEXT = { idle: "ÇEVRİMİÇİ", listening: "SİZİ DİNLİYORUM", thinking: "İŞLİYORUM", speaking: "KONUŞUYORUM" };
+window.setState = (s) => {
+  document.body.className = "state-" + s;
+  $("status-line").textContent = STATUS_TEXT[s] || "ÇEVRİMİÇİ";
+  if (s === "listening") fxWake();
+};
+
+window.setWakeStatus = (s) => {
+  const chip = $("wake-chip"), txt = $("wake-txt");
+  chip.className = "chip";
+  if (s === "listening") { chip.classList.add("on"); txt.textContent = "HEY MASON: AKTİF"; }
+  else if (s === "loading") { chip.classList.add("warn"); txt.textContent = "MODEL YÜKLENİYOR"; }
+  else if (s === "error") { txt.textContent = "MİKROFON HATASI"; }
+  else if (s === "disabled") { txt.textContent = "ALGILAMA KAPALI"; }
+  else { txt.textContent = "SES PAKETLERİ EKSİK"; }
+};
+
+/* ============ SAAT ============ */
+function tickClock() {
+  const n = new Date();
+  $("ro-time").textContent = n.toLocaleTimeString("tr-TR");
+  $("ro-date").textContent = n.toLocaleDateString("tr-TR", { day: "2-digit", month: "short", weekday: "short" }).toUpperCase();
+}
+setInterval(tickClock, 1000); tickClock();
+
+/* ============ PARTIKUL AGI ============ */
+const cv = $("bg"), bctx = cv.getContext("2d");
+let parts = [];
+function resizeCv() {
+  cv.width = innerWidth; cv.height = innerHeight;
+  parts = Array.from({ length: 85 }, () => ({
+    x: Math.random() * cv.width, y: Math.random() * cv.height,
+    vx: (Math.random() - .5) * .3, vy: (Math.random() - .5) * .3,
+    r: Math.random() * 1.7 + .3, z: Math.random(),
+  }));
+}
+addEventListener("resize", resizeCv); resizeCv();
+(function drawBg() {
+  bctx.clearRect(0, 0, cv.width, cv.height);
+  const amp = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--amp")) || 0;
+  for (const p of parts) {
+    p.x += p.vx * (1 + amp * 5) * (0.4 + p.z); p.y += p.vy * (1 + amp * 5) * (0.4 + p.z);
+    if (p.x < 0) p.x = cv.width; if (p.x > cv.width) p.x = 0;
+    if (p.y < 0) p.y = cv.height; if (p.y > cv.height) p.y = 0;
+    bctx.beginPath(); bctx.arc(p.x, p.y, p.r * (1 + amp), 0, 7);
+    bctx.fillStyle = "rgba(0,229,255," + ((0.1 + p.z * .15) + amp * .3) + ")"; bctx.fill();
+  }
+  for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
+    const dx = parts[i].x - parts[j].x, dy = parts[i].y - parts[j].y, d = dx * dx + dy * dy;
+    if (d < 12000) {
+      bctx.beginPath(); bctx.moveTo(parts[i].x, parts[i].y); bctx.lineTo(parts[j].x, parts[j].y);
+      bctx.strokeStyle = "rgba(0,229,255," + (0.045 * (1 - d / 12000)) + ")"; bctx.stroke();
+    }
+  }
+  requestAnimationFrame(drawBg);
+})();
+
+/* ============ DAIRESEL SES GORSELLESTIRICI ============ */
+const viz = $("viz"), vctx = viz.getContext("2d");
+let vizLevels = new Array(56).fill(0);
+(function drawViz() {
+  vctx.clearRect(0, 0, 260, 260);
+  const cx = 130, cy = 130 + 52, baseR = 76;  // orb merkezine hizala
+  const t = performance.now() / 1000;
+  const speaking = document.body.className === "state-speaking";
+  for (let i = 0; i < 56; i++) {
+    let lvl = vizLevels[i];
+    if (!speaking) lvl = 0.06 + Math.abs(Math.sin(t * 1.4 + i * .55)) * 0.09; // bosta nefes alma
+    const ang = (i / 56) * Math.PI * 2 - Math.PI / 2;
+    const len = 4 + lvl * 46;
+    const x1 = cx + Math.cos(ang) * baseR, y1 = cy + Math.sin(ang) * baseR;
+    const x2 = cx + Math.cos(ang) * (baseR + len), y2 = cy + Math.sin(ang) * (baseR + len);
+    vctx.beginPath(); vctx.moveTo(x1, y1); vctx.lineTo(x2, y2);
+    vctx.strokeStyle = speaking ? "rgba(0,229,255," + (0.25 + lvl * .7) + ")" : "rgba(0,229,255,.14)";
+    vctx.lineWidth = 2;
+    vctx.stroke();
+  }
+  requestAnimationFrame(drawViz);
+})();
+
+/* ============ MESAJLAR ============ */
+function nowStr() { return new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }); }
+function mdLite(text) {
+  const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return esc.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\*(.+?)\*/g, "<i>$1</i>").replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+function addMessage(role, text, isError = false, typewriter = false) {
+  const div = document.createElement("div");
+  div.className = "msg " + role + (isError ? " error" : "");
+  const who = document.createElement("div");
+  who.className = "who";
+  who.innerHTML = role === "user"
+    ? '<span class="t">' + nowStr() + "</span><span>MUZAFFER</span>"
+    : "<span>◈ MASON</span><span class=\"t\">" + nowStr() + "</span>";
+  const body = document.createElement("div");
+  div.appendChild(who); div.appendChild(body);
+  messagesEl.appendChild(div);
+  if (typewriter && !isError && text.length < 1600) {
+    let i = 0;
+    const speed = Math.max(5, Math.min(16, 2200 / text.length));
+    (function typeChar() {
+      i += 1 + Math.floor(Math.random() * 3);
+      body.textContent = text.slice(0, i);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      if (i < text.length) setTimeout(typeChar, speed);
+      else body.innerHTML = mdLite(text);
+    })();
+  } else body.innerHTML = mdLite(text);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+function addActionsNote(actions) {
+  if (!actions || !actions.length) return;
+  const div = document.createElement("div");
+  div.className = "sys-note";
+  div.textContent = "SYS ▸ " + actions.join("  ·  ");
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+/* ============ SES REAKTIF CALMA ============ */
+let voiceRepliesOn = true, ttsAvailable = false, currentAudio = null;
+let actx = null;
+function playAudioReactive(b64) {
+  if (!b64) return;
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  const audio = new Audio("data:audio/mp3;base64," + b64);
+  currentAudio = audio;
+  try {
+    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = actx.createMediaElementSource(audio);
+    const analyser = actx.createAnalyser(); analyser.fftSize = 128;
+    src.connect(analyser); analyser.connect(actx.destination);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    (function pump() {
+      if (currentAudio !== audio) return;
+      analyser.getByteFrequencyData(data);
+      let sum = 0;
+      for (let i = 0; i < 56; i++) {
+        const v = (data[i % data.length] || 0) / 255;
+        vizLevels[i] = v; sum += v;
+      }
+      const amp = Math.min(1, (sum / 56) * 2.2);
+      document.documentElement.style.setProperty("--amp", amp.toFixed(3));
+      if (!audio.ended) requestAnimationFrame(pump);
+    })();
+  } catch (e) {}
+  setState("speaking");
+  audio.onended = () => {
+    document.documentElement.style.setProperty("--amp", "0");
+    vizLevels.fill(0);
+    setState("idle");
+  };
+  audio.play();
+}
+window.playB64 = playAudioReactive;
+
+async function speakReply(text) {
+  if (!ttsAvailable) return;
+  try {
+    const res = await window.pywebview.api.speak(text);
+    if (res.ok && res.audio_b64) playAudioReactive(res.audio_b64);
+  } catch (e) {}
+}
+
+$("voice-toggle").onclick = async () => {
+  voiceRepliesOn = !voiceRepliesOn;
+  renderVoiceToggle();
+  if (!voiceRepliesOn && currentAudio) { currentAudio.pause(); setState("idle"); document.documentElement.style.setProperty("--amp", "0"); vizLevels.fill(0); }
+  await window.pywebview.api.save_settings({ voice_replies: voiceRepliesOn });
+};
+function renderVoiceToggle() {
+  const b = $("voice-toggle");
+  b.textContent = voiceRepliesOn ? "🔊" : "🔇";
+  b.classList.toggle("on", voiceRepliesOn);
+}
+
+/* ============ GONDERME ============ */
+async function send() {
+  const text = inputEl.value.trim();
+  if (!text || sendBtn.disabled) return;
+  inputEl.value = ""; autoGrow();
+  addMessage("user", text);
+  fxSend();
+  sendBtn.disabled = true; setState("thinking");
+  try {
+    const res = await window.pywebview.api.send_message(text);
+    fxReply();
+    addMessage("assistant", res.reply, res.error, true);
+    addActionsNote(res.actions_done);
+    if (voiceRepliesOn && !res.error) speakReply(res.reply); else setState("idle");
+    await refreshState();
+  } catch (e) {
+    addMessage("assistant", "Bir hata oluştu: " + e, true);
+    setState("idle");
+  } finally {
+    sendBtn.disabled = false;
+    inputEl.focus();
+  }
+}
+sendBtn.onclick = send;
+inputEl.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
+function autoGrow() { inputEl.style.height = "auto"; inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + "px"; }
+inputEl.addEventListener("input", autoGrow);
+
+/* ============ FAZ 3 KOPRULERI ============ */
+window.voiceUser = (text) => { addMessage("user", "🎙️ " + text); setState("thinking"); };
+window.voiceReply = (reply, actions, isErr) => {
+  fxReply();
+  addMessage("assistant", reply, isErr, true);
+  addActionsNote(actions);
+  if (voiceRepliesOn && !isErr) speakReply(reply); else setState("idle");
+  refreshState();
+};
+
+/* ============ MIKROFON ============ */
+let recording = false;
+$("mic").onclick = async () => {
+  const mic = $("mic");
+  if (!recording) {
+    const res = await window.pywebview.api.start_recording();
+    if (!res.ok) { addMessage("assistant", "🎤 " + res.error, true); return; }
+    recording = true; mic.classList.add("recording"); setState("listening");
+    inputEl.placeholder = "Dinliyorum... bitince 🎤'a tekrar tıkla";
+  } else {
+    recording = false; mic.classList.remove("recording"); mic.disabled = true;
+    setState("thinking");
+    inputEl.placeholder = "Çözümleniyor...";
+    try {
+      const res = await window.pywebview.api.stop_recording();
+      if (res.ok && res.text) { inputEl.value = res.text; autoGrow(); send(); }
+      else if (!res.ok) { addMessage("assistant", "🎤 " + res.error, true); setState("idle"); }
+      else setState("idle");
+    } finally {
+      mic.disabled = false;
+      inputEl.placeholder = "Komut gir veya 'Hey Mason' de...";
+    }
+  }
+};
+
+/* ============ YENI SOHBET ============ */
+$("clear-btn").onclick = async () => {
+  if (!confirm("Sohbet ekranı temizlensin mi?\n(Hafıza, görevler ve planlar SİLİNMEZ — Mason seni unutmaz.)")) return;
+  await window.pywebview.api.clear_chat();
+  messagesEl.innerHTML = "";
+  addMessage("assistant", "Ekran temizlendi. Kaldığımız yerden devam, Muzaffer — hiçbir şeyi unutmadım.", false, true);
+};
+
+/* ============ YAN PANEL ============ */
+document.querySelectorAll("#tabs button").forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll("#tabs button").forEach((x) => x.classList.remove("active"));
+    b.classList.add("active");
+    activeTab = b.dataset.tab;
+    renderPanel();
+  };
+});
+
+async function refreshState() {
+  state = await window.pywebview.api.get_state();
+  const memCount = Object.values(state.memory_tree).reduce((a, v) => a + v.length, 0);
+  const openTasks = state.tasks.filter((t) => t.status !== "done").length;
+  animateNum("st-mem", memCount); animateNum("st-task", openTasks); animateNum("st-plan", state.plans.length);
+  $("c-mem").textContent = memCount || ""; $("c-task").textContent = openTasks || ""; $("c-plan").textContent = state.plans.length || "";
+  renderPanel();
+}
+function animateNum(id, target) {
+  const el = $(id); const cur = parseInt(el.textContent) || 0;
+  if (cur === target) return;
+  const step = target > cur ? 1 : -1;
+  (function tickN(v) {
+    el.textContent = v;
+    if (v !== target) setTimeout(() => tickN(v + step), 40);
+  })(cur);
+}
+
+function renderPanel() {
+  const p = $("panel");
+  p.innerHTML = "";
+  if (activeTab === "tasks") {
+    if (!state.tasks.length) { p.innerHTML = '<div class="empty">GÖREV LİSTESİ BOŞ<br><br>MASON\'A SÖYLE, EKLESIN</div>'; return; }
+    state.tasks.forEach((t) => {
+      const d = document.createElement("div");
+      d.className = "task-item" + (t.status === "done" ? " done" : "");
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.checked = t.status === "done";
+      cb.onchange = async () => { state = await window.pywebview.api.toggle_task(t.id, cb.checked); renderPanel(); };
+      const info = document.createElement("div");
+      const meta = [t.project, t.due_date ? "◷ " + t.due_date : null].filter(Boolean).join("  ·  ");
+      info.innerHTML = '<div class="t-title">' + mdLite(t.title) + "</div>" + (meta ? '<div class="t-meta">' + mdLite(meta) + "</div>" : "");
+      const pr = document.createElement("span");
+      pr.className = "prio p" + t.priority; pr.textContent = "P" + t.priority;
+      d.appendChild(cb); d.appendChild(info); info.style.flex = "1"; d.appendChild(pr);
+      p.appendChild(d);
+    });
+  } else if (activeTab === "memory") {
+    const keys = Object.keys(state.memory_tree);
+    if (!keys.length) { p.innerHTML = '<div class="empty">HAFIZA BANKASI BOŞ<br><br>KONUŞTUKÇA ÖĞRENİRİM</div>'; return; }
+    keys.forEach((proj) => {
+      const g = document.createElement("div");
+      g.className = "mem-project";
+      g.innerHTML = '<div class="branch">◈ ' + mdLite(proj).toUpperCase() + "</div>";
+      state.memory_tree[proj].forEach((m) => {
+        const leaf = document.createElement("div");
+        leaf.className = "mem-leaf";
+        leaf.innerHTML = mdLite(m.content) + ' <span class="cat">[' + m.category + "]</span>";
+        g.appendChild(leaf);
+      });
+      p.appendChild(g);
+    });
+  } else {
+    if (!state.plans.length) { p.innerHTML = '<div class="empty">KAYITLI PLAN YOK<br><br>HAFTALIK PLAN İSTE</div>'; return; }
+    state.plans.forEach((pl) => {
+      const d = document.createElement("div");
+      d.className = "plan-item";
+      d.innerHTML = '<div class="p-title">▸ ' + mdLite(pl.title) + '</div><div class="p-meta">' + pl.period + " · " + pl.created_at + '</div><div class="p-body">' + mdLite(pl.content) + "</div>";
+      d.querySelector(".p-title").onclick = () => d.classList.toggle("open");
+      p.appendChild(d);
+    });
+  }
+}
+
+/* ============ AYARLAR ============ */
+function showProviderFields() {
+  const v = $("s-provider").value;
+  $("f-gemini").classList.toggle("show", v === "gemini");
+  $("f-ollama").classList.toggle("show", v === "ollama");
+}
+$("s-provider").onchange = showProviderFields;
+
+$("settings-btn").onclick = async () => {
+  const c = await window.pywebview.api.get_settings();
+  $("s-provider").value = c.provider;
+  $("s-gemini-key").value = c.gemini_api_key || "";
+  $("s-gemini-model").value = c.gemini_model || "";
+  $("s-ollama-url").value = c.ollama_url || "";
+  $("s-ollama-model").value = c.ollama_model || "";
+  $("s-name").value = c.user_name || "";
+  $("s-tts-voice").value = c.tts_voice || "en-US-AndrewMultilingualNeural";
+  $("s-tts-rate").value = c.tts_rate || "+18%";
+  $("s-stt-lang").value = c.stt_language || "tr";
+  $("s-whisper").value = c.whisper_model || "";
+  $("s-wake").checked = c.wake_word_enabled !== false;
+  $("s-clap").checked = c.clap_enabled !== false;
+  $("s-hidden").checked = c.start_hidden === true;
+  showProviderFields();
+  $("modal-bg").classList.add("show");
+};
+$("s-cancel").onclick = () => $("modal-bg").classList.remove("show");
+$("s-save").onclick = async () => {
+  await window.pywebview.api.save_settings({
+    provider: $("s-provider").value,
+    gemini_api_key: $("s-gemini-key").value.trim(),
+    gemini_model: $("s-gemini-model").value.trim() || "gemini-2.5-flash",
+    ollama_url: $("s-ollama-url").value.trim() || "http://localhost:11434",
+    ollama_model: $("s-ollama-model").value.trim() || "llama3.2",
+    user_name: $("s-name").value.trim() || "Muzaffer",
+    tts_voice: $("s-tts-voice").value,
+    tts_rate: $("s-tts-rate").value,
+    stt_language: $("s-stt-lang").value,
+    whisper_model: $("s-whisper").value.trim() || "small",
+    wake_word_enabled: $("s-wake").checked,
+    clap_enabled: $("s-clap").checked,
+    start_hidden: $("s-hidden").checked,
+  });
+  $("modal-bg").classList.remove("show");
+  blip(980, .08);
+};
+
+/* ============ BOOT DIZISI ============ */
+async function bootSequence() {
+  const lines = [
+    ["> çekirdek başlatılıyor", " TAMAM"],
+    ["> nöral bağlantı", " TAMAM"],
+    ["> hafıza bankası", " TAMAM"],
+    ["> görev &amp; plan motoru", " TAMAM"],
+    ["> ses sistemleri", " TAMAM"],
+    ["SİSTEM HAZIR — HOŞ GELDİN MUZAFFER", ""],
+  ];
+  const el = $("boot-lines"), fill = $("boot-fill");
+  let skipped = false;
+  $("boot").onclick = () => { skipped = true; };
+  for (let i = 0; i < lines.length; i++) {
+    if (skipped) break;
+    const [txt, ok] = lines[i];
+    el.innerHTML += txt + '<span class="ok">' + ok + "</span><br>";
+    fill.style.width = ((i + 1) / lines.length * 100) + "%";
+    blip(420 + i * 90, .04, .02);
+    await new Promise((r) => setTimeout(r, i === lines.length - 1 ? 500 : 260));
+  }
+  fill.style.width = "100%";
+  $("boot").classList.add("hide");
+  $("app").classList.add("ready");
+  blip(880, .1, .03); setTimeout(() => blip(1180, .12, .03), 100);
+}
+
+/* ============ BASLANGIC ============ */
+(async () => {
+  await apiReady();
+  const bootP = bootSequence();
+  const history = await window.pywebview.api.get_history();
+  if (history.length) {
+    history.forEach((m) => addMessage(m.role, m.content));
+  } else {
+    addMessage("assistant",
+      "Sistemler devrede, Muzaffer. Ben Mason.\n\nSeninle konuştukça projelerini, hedeflerini ve planlarını asla unutmayacağım. Bana projelerinden bahset, görevlerini söyle, benden plan iste.\n\n\"Hey Mason\" diyerek ya da iki kez alkışlayarak beni her an çağırabilirsin.", false, true);
+  }
+  const cfg = await window.pywebview.api.get_settings();
+  voiceRepliesOn = cfg.voice_replies !== false;
+  renderVoiceToggle();
+  try {
+    const vs = await window.pywebview.api.voice_status();
+    ttsAvailable = vs.tts;
+    if (!vs.stt) { $("mic").disabled = true; $("mic").title = "Ses tanıma için: pip install faster-whisper sounddevice numpy"; }
+    if (!vs.tts) { $("voice-toggle").disabled = true; $("voice-toggle").title = "Sesli yanıt için: pip install edge-tts"; }
+    if (!vs.wake) setWakeStatus(vs.stt ? "disabled" : "unavailable");
+  } catch (e) {}
+  if (cfg.provider === "gemini" && !cfg.gemini_api_key) $("settings-btn").click();
+  await refreshState();
+  await bootP;
+  inputEl.focus();
+})();
+</script>
+</body>
+</html>

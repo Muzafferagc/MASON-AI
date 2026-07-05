@@ -199,6 +199,22 @@
   .mini-btn:disabled { opacity: .5; cursor: default; }
   .plan-item .p-head { display: flex; align-items: center; gap: 8px; }
   .plan-item .p-head .p-title { flex: 1; }
+  /* ---- Takvim ---- */
+  .cal-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .cal-title { flex: 1; text-align: center; font-family: var(--hud); font-size: 13px; letter-spacing: 2px; color: var(--cyan); }
+  .cal-nav { background: var(--glass); border: 1px solid var(--stroke); color: var(--cyan); width: 30px; height: 30px; border-radius: 9px; cursor: pointer; font-size: 16px; line-height: 1; }
+  .cal-nav:hover { border-color: var(--stroke-2); background: rgba(var(--accentRGB),.1); }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+  .cal-dow { text-align: center; font-family: var(--hud); font-size: 9px; letter-spacing: 1px; color: var(--muted); padding: 4px 0; }
+  .cal-cell { min-height: 72px; background: var(--glass); border: 1px solid var(--stroke); border-radius: 9px; padding: 4px 5px; overflow: hidden; }
+  .cal-cell.empty { background: none; border: none; }
+  .cal-cell.today { border-color: var(--stroke-2); box-shadow: 0 0 14px rgba(var(--accentRGB),.22) inset; }
+  .cal-num { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+  .cal-cell.today .cal-num { color: var(--cyan); font-weight: 700; }
+  .cal-task { font-size: 9.5px; line-height: 1.4; display: flex; align-items: center; gap: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
+  .cal-task i { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+  .cal-task.done { opacity: .45; text-decoration: line-through; }
+  .cal-more { font-size: 8.5px; color: var(--muted); font-family: var(--mono); }
   /* ---- Surukle-birak katmani ---- */
   #dropzone { position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center; background: rgba(4,7,13,.72); backdrop-filter: blur(6px); }
   #dropzone.show { display: flex; animation: msgIn .18s; }
@@ -321,6 +337,7 @@
   <div id="dock">
     <button class="nav-btn active" data-view="chat">SOHBET</button>
     <button class="nav-btn" data-view="tasks">GÖREVLER<span class="cnt" id="c-task"></span></button>
+    <button class="nav-btn" data-view="calendar">TAKVİM</button>
     <button class="nav-btn" data-view="memory">HAFIZA<span class="cnt" id="c-mem"></span></button>
     <button class="nav-btn" data-view="plans">PLANLAR<span class="cnt" id="c-plan"></span></button>
     <button class="nav-btn" data-view="documents">BELGELER<span class="cnt" id="c-doc"></span></button>
@@ -439,8 +456,27 @@
 
     <label class="check-row"><input type="checkbox" id="s-wake"> "Hey Mason" ile uyanma</label>
     <label class="check-row"><input type="checkbox" id="s-clap"> Çift alkış ile uyanma</label>
+    <label class="check-row"><input type="checkbox" id="s-continuous"> Kesintisiz konuşma modu (cevaptan sonra "Hey Mason" demeden dinle)</label>
     <label class="check-row"><input type="checkbox" id="s-hidden"> Gizli başla (tepside bekle)</label>
     <div class="hint">Bu ayarlar uygulama yeniden başlatılınca etkili olur.</div>
+
+    <label style="margin-top:14px">🔔 BİLDİRİMLER & SABAH BRİFİNGİ</label>
+    <label class="check-row"><input type="checkbox" id="s-notify"> Windows yerel bildirimleri (toast) kullan</label>
+    <label class="check-row"><input type="checkbox" id="s-briefing"> Her sabah "günün brifingi" (görevler + hava)</label>
+    <div class="duo">
+      <div><label>BRİFİNG SAATİ</label><input id="s-briefing-time" placeholder="08:00"></div>
+      <div><label>ŞEHİR (HAVA)</label><input id="s-weather-city" placeholder="Antalya"></div>
+    </div>
+    <div class="duo">
+      <div><label>ENLEM</label><input id="s-weather-lat" placeholder="36.90"></div>
+      <div><label>BOYLAM</label><input id="s-weather-lon" placeholder="30.70"></div>
+    </div>
+    <label class="check-row"><input type="checkbox" id="s-briefing-speak"> Brifingi sesli de oku</label>
+    <label class="check-row"><input type="checkbox" id="s-weather"> Brifingde hava durumunu göster</label>
+    <div class="row" style="margin-top:8px">
+      <button class="btn ghost" id="s-briefing-test" type="button">🌅 BRİFİNGİ ŞİMDİ DENE</button>
+    </div>
+    <div class="hint" id="briefing-status">Hava durumu ücretsiz Open-Meteo ile (API anahtarı gerekmez). Şehir adı yalnızca gösterim; konum enlem/boylamdan alınır (Antalya varsayılan).</div>
 
     <div class="row">
       <button class="btn ghost" id="s-cancel">VAZGEÇ</button>
@@ -752,9 +788,12 @@ $("clear-btn").onclick = async () => {
 /* ============ HATIRLATICI ============ */
 window.masonReminder = (text) => { if (text) addActionsNote(["⏰ " + text]); };
 
+/* ============ SABAH BRİFİNGİ ============ */
+window.masonBriefing = (text) => { if (text) { showView("chat"); addMessage("assistant", text, false, true); } };
+
 /* ============ SILME ONAYI (hafiza + gorev, sifre korumali) ============ */
 let hasDeletePw = false;
-const _emptyDel = () => ({ mems: [], tasks: [], docs: [], plans: [] });
+const _emptyDel = () => ({ mems: [], tasks: [], docs: [], plans: [], baks: [] });
 let _pendingDel = _emptyDel();
 
 function _delSummary() {
@@ -763,11 +802,13 @@ function _delSummary() {
   if (_pendingDel.tasks.length) parts.push(_pendingDel.tasks.length + " görev");
   if (_pendingDel.plans.length) parts.push(_pendingDel.plans.length + " plan");
   if (_pendingDel.docs.length) parts.push(_pendingDel.docs.length + " belge");
+  if (_pendingDel.baks.length) parts.push(_pendingDel.baks.length + " yedek");
   return parts.join(" + ");
 }
-function openDeleteConfirm(memIds, taskIds, docIds, planIds) {
+function openDeleteConfirm(memIds, taskIds, docIds, planIds, bakFiles) {
   _pendingDel = { mems: (memIds || []).slice(), tasks: (taskIds || []).slice(),
-                  docs: (docIds || []).slice(), plans: (planIds || []).slice() };
+                  docs: (docIds || []).slice(), plans: (planIds || []).slice(),
+                  baks: (bakFiles || []).slice() };
   $("pw-detail").textContent = "Silinecek: " + _delSummary();
   $("pw-input").value = ""; $("pw-err").textContent = "";
   $("pw-modal-bg").classList.add("show");
@@ -776,31 +817,37 @@ function openDeleteConfirm(memIds, taskIds, docIds, planIds) {
 function checkPendingForget(res) {
   const m = (res && res.pending_forget) || [];
   const t = (res && res.pending_tasks) || [];
-  if (m.length || t.length) openDeleteConfirm(m, t, [], []);
+  if (m.length || t.length) openDeleteConfirm(m, t, [], [], []);
 }
 /* Sekmelerdeki manuel silme: sifre varsa onay penceresi, yoksa direkt */
 async function manualDelete(memIds, taskIds) {
-  if (hasDeletePw) { openDeleteConfirm(memIds, taskIds, [], []); return; }
+  if (hasDeletePw) { openDeleteConfirm(memIds, taskIds, [], [], []); return; }
   await window.pywebview.api.apply_delete(memIds || [], taskIds || [], "", []);
   await refreshState();
 }
 async function manualDeletePlan(planId) {
-  if (hasDeletePw) { openDeleteConfirm([], [], [], [planId]); return; }
+  if (hasDeletePw) { openDeleteConfirm([], [], [], [planId], []); return; }
   await window.pywebview.api.apply_delete([], [], "", [planId]);
   addActionsNote(["🗑️ Plan silindi"]);
   await refreshState();
 }
 async function manualDeleteDoc(docId) {
-  if (hasDeletePw) { openDeleteConfirm([], [], [docId], []); return; }
+  if (hasDeletePw) { openDeleteConfirm([], [], [docId], [], []); return; }
   await window.pywebview.api.delete_document(docId, "");
   addActionsNote(["🗑️ Belge silindi"]);
+  await refreshState();
+}
+async function manualDeleteBackup(file) {
+  if (hasDeletePw) { openDeleteConfirm([], [], [], [], [file]); return; }
+  const r = await window.pywebview.api.delete_backup(file, "");
+  addActionsNote([r.ok ? "🗑️ Yedek silindi" : "⚠️ " + (r.error || "silinemedi")]);
   await refreshState();
 }
 $("pw-cancel").onclick = () => { _pendingDel = _emptyDel(); $("pw-modal-bg").classList.remove("show"); addActionsNote(["🔒 Silme iptal edildi"]); };
 $("pw-ok").onclick = async () => {
   const pw = $("pw-input").value;
   try {
-    let memCount = 0, taskCount = 0, planCount = 0, docCount = 0;
+    let memCount = 0, taskCount = 0, planCount = 0, docCount = 0, bakCount = 0;
     if (_pendingDel.mems.length || _pendingDel.tasks.length || _pendingDel.plans.length) {
       const r = await window.pywebview.api.apply_delete(_pendingDel.mems, _pendingDel.tasks, pw, _pendingDel.plans);
       if (!r.ok) { $("pw-err").textContent = r.error || "Şifre yanlış"; return; }
@@ -811,12 +858,18 @@ $("pw-ok").onclick = async () => {
       if (!dr.ok) { $("pw-err").textContent = dr.error || "Şifre yanlış"; return; }
       docCount++;
     }
+    for (const f of _pendingDel.baks) {
+      const br = await window.pywebview.api.delete_backup(f, pw);
+      if (!br.ok) { $("pw-err").textContent = br.error || "Şifre yanlış"; return; }
+      bakCount++;
+    }
     $("pw-modal-bg").classList.remove("show");
     const parts = [];
     if (memCount) parts.push(memCount + " hafıza");
     if (taskCount) parts.push(taskCount + " görev");
     if (planCount) parts.push(planCount + " plan");
     if (docCount) parts.push(docCount + " belge");
+    if (bakCount) parts.push(bakCount + " yedek");
     addActionsNote(["🗑️ Silindi: " + (parts.join(" + ") || "0 kayıt")]);
     _pendingDel = _emptyDel();
     await refreshState();
@@ -825,7 +878,7 @@ $("pw-ok").onclick = async () => {
 $("pw-input").addEventListener("keydown", (e) => { if (e.key === "Enter") $("pw-ok").click(); });
 
 /* ============ GORUNUM / NAV ============ */
-const PANEL_TITLE = { tasks: "GÖREVLER", memory: "HAFIZA BANKASI", plans: "PLANLAR", documents: "BELGE BANKASI", backups: "YEDEKLER" };
+const PANEL_TITLE = { tasks: "GÖREVLER", memory: "HAFIZA BANKASI", plans: "PLANLAR", documents: "BELGE BANKASI", backups: "YEDEKLER", calendar: "TAKVİM" };
 function showView(v) {
   const isChat = v === "chat";
   $("chat-view").style.display = isChat ? "flex" : "none";
@@ -986,6 +1039,8 @@ function renderPanel() {
       }
       p.appendChild(d);
     });
+  } else if (activeTab === "calendar") {
+    renderCalendar(p);
   } else if (activeTab === "backups") {
     const bks = state.backups || [];
     if (!bks.length) { p.innerHTML = '<div class="empty">KAYITLI YEDEK YOK<br><br>AYARLAR → DIŞA AKTAR İLE YEDEK AL</div>'; return; }
@@ -1005,11 +1060,7 @@ function renderPanel() {
       };
       const del = document.createElement("button");
       del.className = "del-x"; del.title = "Bu yedeği sil"; del.textContent = "🗑";
-      del.onclick = async () => {
-        const r = await window.pywebview.api.delete_backup(b.file, "");
-        if (!r.ok) { addActionsNote(["⚠️ " + (r.error || "silinemedi")]); return; }
-        addActionsNote(["🗑️ Yedek silindi"]); await refreshState();
-      };
+      del.onclick = () => manualDeleteBackup(b.file);
       head.appendChild(restore); head.appendChild(del);
       d.appendChild(head);
       p.appendChild(d);
@@ -1032,6 +1083,53 @@ function renderPanel() {
 const DOC_ICON = { pdf: "📕", word: "📘", excel: "📗", image: "🖼️", audio: "🎧", text: "📄", other: "📄" };
 const DOC_LABEL = { pdf: "PDF", word: "Word", excel: "Excel", image: "Görsel", audio: "Ses", text: "Metin", other: "Dosya" };
 function humanSize(b) { b = b || 0; if (b < 1024) return b + " B"; if (b < 1048576) return (b / 1024).toFixed(1) + " KB"; return (b / 1048576).toFixed(1) + " MB"; }
+
+/* ============ TAKVİM ============ */
+const AY_ADI = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+const GUN_KISA = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
+let calRef = new Date(); calRef.setDate(1);
+function _ymd(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+function _prioColor(p) { return ["", "#ff6b81", "#ffb347", "#3ce7ff", "#7ff0ff", "#8aa"][p] || "#3ce7ff"; }
+function renderCalendar(p) {
+  const y = calRef.getFullYear(), m = calRef.getMonth();
+  const first = new Date(y, m, 1);
+  const startDow = (first.getDay() + 6) % 7;        // Pazartesi = 0
+  const days = new Date(y, m + 1, 0).getDate();
+  const todayStr = _ymd(new Date());
+  // Görevleri güne göre grupla (son tarihe göre)
+  const byDay = {};
+  (state.tasks || []).forEach((t) => { if (t.due_date) (byDay[t.due_date] = byDay[t.due_date] || []).push(t); });
+
+  const head = document.createElement("div"); head.className = "cal-head";
+  head.innerHTML = '<button class="cal-nav" id="cal-prev">‹</button><div class="cal-title">' + AY_ADI[m] + " " + y + '</div><button class="cal-nav" id="cal-next">›</button>' +
+    '<button class="mini-btn" id="cal-ics" title="Görevleri .ics takvim dosyası olarak dışa aktar">⤓ .ICS</button>';
+  p.appendChild(head);
+  $("cal-prev").onclick = () => { calRef.setMonth(m - 1); renderPanel(); };
+  $("cal-next").onclick = () => { calRef.setMonth(m + 1); renderPanel(); };
+  $("cal-ics").onclick = async () => {
+    const r = await window.pywebview.api.export_ics();
+    addActionsNote([r.ok ? "📅 " + r.count + " görev dışa aktarıldı → disari_aktar/" + r.file : "⚠️ " + (r.error || "dışa aktarılamadı")]);
+  };
+
+  const grid = document.createElement("div"); grid.className = "cal-grid";
+  GUN_KISA.forEach((g) => { const c = document.createElement("div"); c.className = "cal-dow"; c.textContent = g; grid.appendChild(c); });
+  for (let i = 0; i < startDow; i++) { const c = document.createElement("div"); c.className = "cal-cell empty"; grid.appendChild(c); }
+  for (let d = 1; d <= days; d++) {
+    const ds = _ymd(new Date(y, m, d));
+    const cell = document.createElement("div");
+    cell.className = "cal-cell" + (ds === todayStr ? " today" : "");
+    let html = '<div class="cal-num">' + d + "</div>";
+    const items = (byDay[ds] || []).slice(0, 3);
+    items.forEach((t) => {
+      html += '<div class="cal-task' + (t.status === "done" ? " done" : "") + '" title="' + (t.title || "").replace(/"/g, "") + '"><i style="background:' + _prioColor(t.priority) + '"></i>' + mdLite(t.title).slice(0, 22) + "</div>";
+    });
+    const extra = (byDay[ds] || []).length - items.length;
+    if (extra > 0) html += '<div class="cal-more">+' + extra + " daha</div>";
+    cell.innerHTML = html;
+    grid.appendChild(cell);
+  }
+  p.appendChild(grid);
+}
 
 /* ============ AYARLAR ============ */
 function showProviderFields() {
@@ -1085,6 +1183,15 @@ $("settings-btn").onclick = async () => {
   $("s-wake").checked = c.wake_word_enabled !== false;
   $("s-clap").checked = c.clap_enabled !== false;
   $("s-hidden").checked = c.start_hidden === true;
+  $("s-continuous").checked = c.continuous_mode === true;
+  $("s-notify").checked = c.notify_native !== false;
+  $("s-briefing").checked = c.briefing_enabled === true;
+  $("s-briefing-time").value = c.briefing_time || "08:00";
+  $("s-briefing-speak").checked = c.briefing_speak !== false;
+  $("s-weather").checked = c.weather_enabled !== false;
+  $("s-weather-city").value = c.weather_city || "Antalya";
+  $("s-weather-lat").value = c.weather_lat != null ? c.weather_lat : 36.90;
+  $("s-weather-lon").value = c.weather_lon != null ? c.weather_lon : 30.70;
   showProviderFields();
   $("modal-bg").classList.add("show");
 };
@@ -1138,10 +1245,26 @@ $("s-save").onclick = async () => {
     wake_word_enabled: $("s-wake").checked,
     clap_enabled: $("s-clap").checked,
     start_hidden: $("s-hidden").checked,
+    continuous_mode: $("s-continuous").checked,
+    notify_native: $("s-notify").checked,
+    briefing_enabled: $("s-briefing").checked,
+    briefing_time: ($("s-briefing-time").value.trim() || "08:00").slice(0, 5),
+    briefing_speak: $("s-briefing-speak").checked,
+    weather_enabled: $("s-weather").checked,
+    weather_city: $("s-weather-city").value.trim() || "Antalya",
+    weather_lat: parseFloat($("s-weather-lat").value) || 36.90,
+    weather_lon: parseFloat($("s-weather-lon").value) || 30.70,
   });
   applyTheme($("s-theme").value);
   $("modal-bg").classList.remove("show");
   blip(980, .08);
+};
+$("s-briefing-test").onclick = async () => {
+  $("briefing-status").innerHTML = "⏳ Brifing hazırlanıyor (hava durumu çekiliyor)...";
+  try {
+    const r = await window.pywebview.api.run_briefing_now();
+    $("briefing-status").innerHTML = r.ok ? "✅ Brifing çalıştırıldı (sohbete eklendi)." : "⚠️ " + (r.error || "brifing başarısız");
+  } catch (e) { $("briefing-status").innerHTML = "⚠️ Hata: " + e; }
 };
 $("s-export").onclick = async () => {
   const r = await window.pywebview.api.export_memory();

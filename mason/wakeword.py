@@ -103,6 +103,13 @@ class WakeWordListener(threading.Thread):
         self._command_mode_until = time.time() + COMMAND_WINDOW_SEC
         self.on_wake_only()
 
+    def open_command_window(self, seconds: float = 8.0) -> None:
+        """KESINTISIZ KONUSMA MODU: 'Hey Mason' demeden komut penceresini yeniden
+        acar. run.py, Mason cevabini bitirdikten (ses bittikten) sonra bunu cagirir;
+        boylece kullanici dogrudan devam edebilir. Sessizlikte pencere kendiliginden
+        kapanir ve normal wake-word moduna donulur."""
+        self._command_mode_until = time.time() + max(2.0, float(seconds))
+
     def _dispatch(self, audio) -> None:
         """Konusmayi AYRI bir thread'de isle. Boylece yavas yaziya cevirme
         ve LLM cevabi ses dongusunu bloklamaz; mikrofon okunmaya devam eder

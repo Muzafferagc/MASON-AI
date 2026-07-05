@@ -17,7 +17,8 @@ from pathlib import Path
 
 import webview
 
-from mason import agent, documents, memory, planner, reminders, voice, wakeword
+from mason import (agent, briefing, documents, ics_export, memory, planner,
+                   reminders, voice, wakeword, weather)
 from mason.config import load_config, save_config
 from mason.database import get_conn
 
@@ -25,6 +26,7 @@ BASE_DIR = Path(__file__).resolve().parent
 UI_FILE = BASE_DIR / "ui" / "index.html"
 BACKUP_DIR = BASE_DIR / "yedekler"       # hafiza yedeklerinin (JSON) tutuldugu klasor
 DOCS_DIR = BASE_DIR / "belgeler"         # yuklenen dosyalarin kopyalandigi klasor
+EXPORT_DIR = BASE_DIR / "disari_aktar"   # .ics gibi disa aktarilan dosyalar
 SHOW_FLAG = BASE_DIR / ".show.trigger"   # arka plandaki ornegi one getirme sinyali
 LOCK_PORT = 50573                         # tek ornek kilidi (localhost)
 
@@ -459,11 +461,59 @@ class Api:
     def audio_ended(self) -> dict:
         """UI, sesli cevap bittiginde (veya susturuldugunda) bunu cagirir.
         Boylece 'Mason konusuyor' susturmasi ANINDA kalkar ve hemen ardindan
-        'hey mason' demek calisir (mute/unmute sonrasi kilit sorunu cozulur)."""
+        'hey mason' demek calisir (mute/unmute sonrasi kilit sorunu cozulur).
+
+        KESINTISIZ KONUSMA MODU: ayar acikça ise, ses bittikten hemen sonra
+        komut penceresini yeniden acariz -> kullanici 'Hey Mason' demeden
+        konusmaya devam edebilir."""
         global _speaking_until, _last_reply_text
         _speaking_until = 0.0
         _last_reply_text = ""
+        cfg = load_config()
+        if cfg.get("continuous_mode") and listener is not None:
+            try:
+                listener.open_command_window(cfg.get("continuous_window_sec", 8))
+                _js("setState('listening')")
+            except Exception:
+                pass
         return {"ok": True}
+
+    # ---- Sabah brifingi + hava durumu + takvim ----
+    def get_briefing(self) -> dict:
+        """Sabah brifingi metnini (ve varsa hava) dondurur — istege bagli test/goster."""
+        cfg = load_config()
+        try:
+            return {"ok": True,
+                    "text": briefing.build_briefing(cfg, cfg.get("weather_enabled", True))}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def run_briefing_now(self) -> dict:
+        """Brifingi HEMEN calistir: bildirim goster + (ayar acikça) sesli oku +
+        sohbete ekle. 'Brifingi şimdi dene' butonu bunu kullanir."""
+        try:
+            _fire_briefing(load_config(), manual=True)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def get_weather(self) -> dict:
+        """Anlik hava durumu (takvim/ayar onizlemesi icin)."""
+        w = weather.get_weather(load_config())
+        return {"ok": bool(w), "weather": w}
+
+    def export_ics(self) -> dict:
+        """Son tarihli gorevleri .ics takvim dosyasi olarak 'disari_aktar/'
+        klasorune yazar (Google/Outlook/Apple takvimine aktarilabilir)."""
+        try:
+            text, count = ics_export.build_ics(planner.list_tasks("all"))
+            EXPORT_DIR.mkdir(exist_ok=True)
+            fname = f"mason_takvim_{time.strftime('%Y%m%d_%H%M%S')}.ics"
+            path = EXPORT_DIR / fname
+            path.write_text(text, encoding="utf-8")
+            return {"ok": True, "count": count, "file": fname, "path": str(path)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
 
 # ---------- Tek ornek (ayni anda tek MASON) ----------
@@ -660,14 +710,50 @@ def _backfill_embeddings_in_background():
         pass
 
 
+def _native_toast(title: str, message: str) -> bool:
+    """Windows yerel toast bildirimi dener (plyer varsa). Basarisizsa False."""
+    if not load_config().get("notify_native", True):
+        return False
+    try:
+        from plyer import notification as _pn
+        _pn.notify(title=title, message=message[:250], app_name="MASON", timeout=10)
+        return True
+    except Exception:
+        return False
+
+
 def _notify(title: str, message: str) -> None:
-    """Hatirlatmayi hem sistem tepsisi bildiriminde hem de arayuzde gosterir."""
+    """Bildirimi uc kanaldan gosterir: (1) Windows yerel toast (plyer),
+    (2) sistem tepsisi balonu, (3) arayuz ici bildirim. Biri calismazsa
+    digerleri devrede kalir."""
+    _native_toast(title, message)
     try:
         if tray_icon is not None:
-            tray_icon.notify(message, title)
+            tray_icon.notify(message[:250], title)
     except Exception:
         pass
     _js(f"masonReminder({json.dumps(message)})")
+
+
+def _fire_briefing(cfg: dict, manual: bool = False) -> None:
+    """Sabah brifingini sun: bildirim + (ayar acikça) sesli oku + sohbete ekle."""
+    text = briefing.build_briefing(cfg, cfg.get("weather_enabled", True))
+    short = briefing.build_short(cfg)
+    _notify("MASON — Günün Brifingi", short)
+    # Sohbete ekle (arayuz aciksa gorunsun)
+    try:
+        _js(f"masonBriefing({json.dumps(text)})")
+    except Exception:
+        pass
+    # Sesli oku (ayar acikça ve TTS varsa)
+    if cfg.get("briefing_speak", True):
+        try:
+            audio = voice.speak_to_base64(text, cfg)
+            if audio:
+                _mark_speaking(text)
+                _js(f"playB64({json.dumps(audio)})")
+        except Exception:
+            pass
 
 
 REMINDER_INTERVAL = 30 * 60  # 30 dakikada bir kontrol
@@ -694,6 +780,27 @@ def _reminder_loop() -> None:
         time.sleep(REMINDER_INTERVAL)
 
 
+def _briefing_loop() -> None:
+    """Her dakika kontrol eder: brifing acikça ve saati geldiyse (gunde bir kez)
+    sabah brifingini sunar."""
+    time.sleep(12)  # acilisin oturmasini bekle
+    last_briefed_day = None
+    while True:
+        try:
+            cfg = load_config()
+            if cfg.get("briefing_enabled"):
+                now = time.strftime("%H:%M")
+                today = time.strftime("%Y-%m-%d")
+                target = str(cfg.get("briefing_time", "08:00"))[:5]
+                # Saat hedefe ulastiysa ve bugun henuz brifing yapilmadiysa
+                if now >= target and last_briefed_day != today:
+                    last_briefed_day = today
+                    _fire_briefing(cfg)
+        except Exception:
+            pass
+        time.sleep(60)
+
+
 def _on_started():
     """Pencere acildiktan sonra arka plan servislerini baslat."""
     try:
@@ -703,6 +810,7 @@ def _on_started():
     threading.Thread(target=_backfill_embeddings_in_background, daemon=True).start()
     threading.Thread(target=_watch_show_trigger, daemon=True).start()
     threading.Thread(target=_reminder_loop, daemon=True).start()
+    threading.Thread(target=_briefing_loop, daemon=True).start()
     _start_tray()
     _start_wake_listener()
     # --show verilmediyse ve ayar gizli baslat ise: tepsiye gizlen (dinlemeye devam)

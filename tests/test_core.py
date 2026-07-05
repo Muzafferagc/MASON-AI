@@ -370,4 +370,32 @@ check("ollama: num_ctx varsayilan 8192 (2048 degil)",
 check("ollama: num_ctx config'ten ayarlanir",
       OllamaProvider(num_ctx=4096).num_ctx == 4096)
 
+# ---------- Faz 6: Hava durumu (Open-Meteo) ----------
+from mason import weather, briefing, ics_export
+_d, _e = weather.describe_code(0)
+check("hava: kod 0 -> açık", _d == "açık")
+check("hava: bilinmeyen kod cokmez", isinstance(weather.describe_code(999)[0], str))
+weather.get_weather = lambda cfg: {"city": "Antalya", "temp": 30, "code": 0,
+    "desc": "açık", "emoji": "☀️", "tmin": 22, "tmax": 34}
+check("hava: format satiri uretir", "Antalya" in weather.format_weather({}))
+
+# ---------- Faz 6: .ics disa aktarma ----------
+planner.add_task("ICS testi gorevi", "Okul", 1, "2026-07-20")
+_ics, _cnt = ics_export.build_ics(planner.list_tasks("all"))
+check("ics: VCALENDAR basligi", _ics.startswith("BEGIN:VCALENDAR"))
+check("ics: en az 1 VEVENT", _ics.count("BEGIN:VEVENT") >= 1 and _cnt >= 1)
+check("ics: tum-gun DATE formati", "DTSTART;VALUE=DATE:20260720" in _ics)
+check("ics: VCALENDAR ile biter", _ics.strip().endswith("END:VCALENDAR"))
+
+# ---------- Faz 6: Sabah brifingi ----------
+briefing.weather.get_weather = lambda cfg: None  # ag kullanma (hava satiri atlanir)
+_brief = briefing.build_briefing({"user_name": "Muzaffer", "weather_enabled": True})
+check("brifing: metin uretir + isim gecer", "Muzaffer" in _brief)
+check("brifing: kisa ozet uretir", isinstance(briefing.build_short({}), str))
+
+# ---------- Faz 6: Kesintisiz konusma modu ----------
+from mason.wakeword import WakeWordListener
+check("wake: open_command_window metodu var",
+      hasattr(WakeWordListener, "open_command_window"))
+
 print(f"\nTUM TESTLER GECTI ({passed}/{passed})")

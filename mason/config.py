@@ -36,6 +36,19 @@ DEFAULTS = {
     # Guvenlik & gorunum
     "memory_password": "",                 # bos degilse: hafiza silmek sifre ister
     "theme": "cyan",                       # arayuz renk paleti (cyan/gold/green/violet/crimson)
+    # Faz 5 - kesintisiz konusma modu
+    "continuous_mode": False,              # cevap sonrasi "hey mason" demeden dinlemeye devam
+    "continuous_window_sec": 8,            # her cevaptan sonra kac sn dinlensin
+    # Faz 5 - sabah brifingi + hava durumu
+    "briefing_enabled": False,             # gunluk gundem bildirimi acik mi
+    "briefing_time": "08:00",              # brifing saati (HH:MM)
+    "briefing_speak": True,                # brifingi sesli de oku
+    "weather_enabled": True,               # brifingde hava durumu gosterilsin mi
+    "weather_city": "Antalya",             # hava durumu sehir adi (gosterim icin)
+    "weather_lat": 36.90,                  # enlem (Open-Meteo, anahtarsiz)
+    "weather_lon": 30.70,                  # boylam
+    # Faz 5 - bildirimler
+    "notify_native": True,                 # Windows yerel toast bildirimi denensin mi
 }
 
 

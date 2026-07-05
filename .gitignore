@@ -18,9 +18,10 @@ __pycache__/
 # Calisma / gecici dosyalar
 .show.trigger
 
-# Hafiza yedekleri ve yuklenen belgeler (kisisel dosyalar)
+# Hafiza yedekleri, yuklenen belgeler ve disa aktarilanlar (kisisel dosyalar)
 yedekler/
 belgeler/
+disari_aktar/
 
 # Sanal ortam (varsa)
 venv/

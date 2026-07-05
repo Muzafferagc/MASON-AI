@@ -18,3 +18,9 @@ pillow>=10.0
 pypdf>=4.0
 python-docx>=1.1
 openpyxl>=3.1
+
+# Bildirimler (Faz 5) - istege bagli: kurulmazsa tepsi bildirimi kullanilir
+# Windows yerel toast bildirimleri icin.
+plyer>=2.1
+# Not: hava durumu (Open-Meteo) ve sabah brifingi ek paket gerektirmez;
+# yalnizca 'requests' kullanir (zaten kurulu).

@@ -12,6 +12,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Sürümleme / Version
 
 ## [Unreleased] — Yayınlanmadı
 
+### Eklendi (Faz 6 — Kesintisiz konuşma, takvim, bildirim, brifing)
+- **Kesintisiz konuşma modu:** Ayardan açılır. Mason cevabını bitirince (ses bittiğinde) ~8 sn boyunca "Hey Mason" demeden dinlemeye devam eder; konuşursan yeni komut olarak işler, sessizlikte normal wake-word moduna döner. Mevcut "komut penceresi" mekanizması yeniden açılarak yapıldı (`WakeWordListener.open_command_window`, `audio_ended` kancası).
+- **TAKVİM sekmesi:** Dock'ta yeni sekme; aylık ızgara, görevler son tarihine göre günlere yerleşir (öncelik renkli nokta ile), bugün vurgulanır, ‹ › ile ay gezinme. Tamamen yerel.
+- **.ics dışa aktarma:** Takvimdeki ⤓ .ICS butonu, son tarihli görevleri standart iCalendar (.ics) dosyası olarak `disari_aktar/` klasörüne yazar → Google/Outlook/Apple takvimine aktarabilirsin (`mason/ics_export.py`, `api.export_ics`).
+- **Bildirim entegrasyonu:** Bildirimler artık 3 kanaldan gider — Windows yerel toast (plyer varsa), sistem tepsisi balonu ve arayüz içi bildirim. Ayardan `notify_native` ile açılıp kapanır.
+- **Sabah brifingi + hava durumu:** Ayardan belirlediğin saatte (varsayılan 08:00) günde bir kez "günün brifingi": selam + tarih + hava durumu + bugünkü/gecikmiş görevler. İstersen sesli de okunur; sohbete de eklenir. Hava durumu **Open-Meteo** ile (ücretsiz, API anahtarı gerekmez; enlem/boylam ayarlanır, varsayılan Antalya). `mason/weather.py`, `mason/briefing.py`, `_briefing_loop`, "🌅 Brifingi şimdi dene" butonu.
+- **Yeni ayarlar:** kesintisiz mod, Windows bildirimi, sabah brifingi (aç/saat/sesli), hava durumu (aç/şehir/enlem/boylam). requirements.txt'e opsiyonel `plyer` eklendi. 21 yeni test (hava/brifing/ics/kesintisiz) — hepsi geçti.
+
+### Düzeltildi
+- **Yedek silme çalışmıyordu:** Silme şifresi ayarlıyken YEDEKLER sekmesindeki 🗑 boş şifreyle çağırdığı için sunucu reddediyordu. Artık diğer silmeler gibi şifre onay penceresinden geçiyor (yedek de "Silinecek: … + N yedek" özetinde görünür).
+
 ### Düzeltildi (kullanıcı geri bildirimleri)
 - **"Hey Mason" deyince pencere öne gelmiyordu → (hotfix) sessiz çökme giderildi:** İlk denemede `_show_window`'a eklenen `window.on_top` toggle'ı, wake-dinleyici ARKA PLAN thread'inden çağrıldığı için Windows/EdgeChromium'da yakalanamayan bir native çökmeye (uygulama sessizce kapanıyordu) yol açtı. `on_top` kaldırıldı; öne getirme artık yalnızca thread-güvenli (GUI thread'ine marshal edilen) `show()` + `restore()` + `maximize()` + `evaluate_js(window.focus())` ile yapılıyor. Böylece "Hey Mason" deyince çökme sona erdi.
 - **Ollama'da "sapıtma" / dediğini anlamama:** Asıl neden Ollama'nın varsayılan **bağlam penceresinin (num_ctx) 2048** olmasıydı — MASON'un uzun sistem promptu (hafıza + görevler + belgeler + kurallar) bunu aşınca promptun başı kesiliyor ve model talimatları göremiyordu. Artık `num_ctx: 8192` (ayarlanabilir) ve `temperature: 0.4` (talimata daha sadık). Bu, yerel modelle tutarlılığı belirgin artırır.

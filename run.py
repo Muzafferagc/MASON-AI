@@ -72,21 +72,56 @@ class Api:
             conn.execute("DELETE FROM messages")
         return {"ok": True}
 
-    def apply_forget(self, ids: list, password: str = "") -> dict:
-        """Sifre korumali hafiza silmeyi onaylar. UI, kullanicinin girdigi
-        sifreyle bunu cagirir; sifre dogruysa verilen hafiza id'leri silinir."""
+    def apply_delete(self, mem_ids: list = None, task_ids: list = None,
+                     password: str = "") -> dict:
+        """Sifre korumali silmeyi onaylar (hafiza + gorev). UI, kullanicinin
+        girdigi sifreyle cagirir; sifre dogruysa verilen id'ler silinir.
+        Sifre hic ayarlanmamissa bos sifreyle de calisir (manuel silme)."""
         cfg = load_config()
         real = cfg.get("memory_password", "")
         if real and (password or "") != real:
             return {"ok": False, "error": "Şifre yanlış"}
-        count = 0
-        for i in (ids or []):
+        mem_count = task_count = 0
+        for i in (mem_ids or []):
             try:
                 memory.forget(int(i))
-                count += 1
+                mem_count += 1
             except Exception:
                 continue
-        return {"ok": True, "count": count}
+        for i in (task_ids or []):
+            try:
+                planner.delete_task(int(i))
+                task_count += 1
+            except Exception:
+                continue
+        return {"ok": True, "mem_count": mem_count, "task_count": task_count,
+                "count": mem_count + task_count}
+
+    def apply_forget(self, ids: list, password: str = "") -> dict:
+        """Eski arayuz uyumu: sadece hafiza siler."""
+        return self.apply_delete(mem_ids=ids, password=password)
+
+    def change_password(self, old: str = "", new: str = "",
+                        repeat: str = "", remove: bool = False) -> dict:
+        """Silme sifresini belirler/degistirir/kaldirir.
+        - Ilk kez belirleme: old bos, new == repeat zorunlu.
+        - Degistirme: old mevcut sifreyle eslesmeli, new == repeat.
+        - Kaldirma (remove=True): old mevcut sifreyle eslesmeli."""
+        cfg = load_config()
+        current = cfg.get("memory_password", "")
+        if current and (old or "") != current:
+            return {"ok": False, "error": "Eski şifre yanlış"}
+        if remove:
+            cfg["memory_password"] = ""
+            save_config(cfg)
+            return {"ok": True, "has_password": False}
+        if not new:
+            return {"ok": False, "error": "Yeni şifre boş olamaz"}
+        if new != repeat:
+            return {"ok": False, "error": "Yeni şifreler birbiriyle uyuşmuyor"}
+        cfg["memory_password"] = new
+        save_config(cfg)
+        return {"ok": True, "has_password": True}
 
     # ---- Hafiza yedekleme ----
     def export_memory(self) -> dict:
@@ -141,13 +176,22 @@ class Api:
 
     # ---- Ayarlar ----
     def get_settings(self) -> dict:
-        return load_config()
+        """Ayarlari dondurur; sifrenin kendisi arayuze GONDERILMEZ,
+        sadece 'var mi yok mu' bilgisi gider (has_memory_password)."""
+        cfg = dict(load_config())
+        cfg["has_memory_password"] = bool(cfg.get("memory_password"))
+        cfg["memory_password"] = ""
+        return cfg
 
     def save_settings(self, settings: dict) -> dict:
         cfg = load_config()
-        cfg.update(settings or {})
+        settings = dict(settings or {})
+        # Sifre yalnizca change_password ile degistirilir (double-check akisi)
+        settings.pop("memory_password", None)
+        settings.pop("has_memory_password", None)
+        cfg.update(settings)
         save_config(cfg)
-        return cfg
+        return self.get_settings()
 
     def ollama_status(self, url: str = "") -> dict:
         """Ollama calisiyor mu, hangi modeller yuklu? (Ayarlar > Test butonu)
@@ -283,7 +327,8 @@ def _on_command(text: str) -> None:
     result = agent.chat(text, load_config())
     _js(f"voiceReply({json.dumps(result['reply'])}, "
         f"{json.dumps(result['actions_done'])}, {json.dumps(result['error'])}, "
-        f"{json.dumps(result.get('pending_forget', []))})")
+        f"{json.dumps(result.get('pending_forget', []))}, "
+        f"{json.dumps(result.get('pending_tasks', []))})")
 
 
 def _on_wake_status(status: str) -> None:

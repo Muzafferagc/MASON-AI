@@ -176,6 +176,10 @@
   .mem-project > .branch::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, var(--stroke-2), transparent); }
   .mem-leaf { font-size: 13.5px; padding: 11px 14px 11px 16px; margin: 0 0 8px 8px; border-radius: 11px; border-left: 2px solid rgba(var(--accentRGB),.5); background: var(--glass); position: relative; backdrop-filter: blur(12px); }
   .mem-leaf .cat { color: var(--muted); font-size: 9.5px; font-family: var(--mono); }
+  .del-x { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; opacity: .45; padding: 2px 6px; transition: opacity .15s, color .15s; }
+  .del-x:hover { opacity: 1; color: #ff6b81; }
+  .mem-leaf { padding-right: 36px; }
+  .mem-leaf .del-x { position: absolute; right: 6px; top: 8px; }
   .plan-item { background: var(--glass); border: 1px solid var(--stroke); border-radius: 13px; padding: 14px 16px; margin-bottom: 11px; animation: msgIn .3s; backdrop-filter: blur(12px); }
   .plan-item .p-title { color: var(--cyan); font-size: 14px; font-weight: 600; cursor: pointer; letter-spacing: .3px; }
   .plan-item .p-meta { font-size: 10.5px; color: var(--muted); margin: 4px 0 6px; font-family: var(--mono); }
@@ -379,9 +383,17 @@
     </div>
     <div class="hint">Whisper: tiny → base → small (önerilen) → medium. İlk kullanımda indirilir.</div>
 
-    <label>HAFIZA SİLME ŞİFRESİ</label>
-    <input id="s-mempass" type="password" placeholder="Boş bırak = koruma kapalı">
-    <div class="hint">Bir şifre yazarsan, hafıza silme işlemleri bu şifreyi ister. (Yalnızca bu bilgisayarda saklanır.)</div>
+    <label>SİLME ŞİFRESİ (HAFIZA + GÖREVLER)</label>
+    <input id="s-pw-old" type="password" placeholder="Eski şifre" autocomplete="off" style="display:none">
+    <div class="duo">
+      <div><input id="s-pw-new" type="password" placeholder="Yeni şifre" autocomplete="off"></div>
+      <div><input id="s-pw-rep" type="password" placeholder="Yeni şifre (tekrar)" autocomplete="off"></div>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <button class="btn ghost" id="s-pw-apply" type="button">ŞİFRE BELİRLE</button>
+      <button class="btn ghost" id="s-pw-remove" type="button" style="display:none">ŞİFREYİ KALDIR</button>
+    </div>
+    <div class="hint" id="pw-status">Şifre koyarsan hafıza ve görev silme işlemleri onay ister. İki alana da aynı şifreyi yaz (yanlış yazmaya karşı çift kontrol). Yalnızca bu bilgisayarda saklanır.</div>
 
     <label>HAFIZA YEDEKLEME</label>
     <div class="row">
@@ -404,8 +416,9 @@
 
 <div id="pw-modal-bg">
   <div id="pw-modal">
-    <h2>🔒 HAFIZA SİLME ONAYI</h2>
-    <div class="hint" style="margin-bottom: 14px;">Hafıza silme işlemi şifre korumalı. Devam etmek için şifreni gir.</div>
+    <h2>🔒 SİLME ONAYI</h2>
+    <div class="hint" id="pw-detail" style="margin-bottom: 6px; color: var(--cyan);"></div>
+    <div class="hint" style="margin-bottom: 14px;">Silme işlemi şifre korumalı. Devam etmek için şifreni gir.</div>
     <input id="pw-input" type="password" placeholder="Şifre" autocomplete="off">
     <div id="pw-err"></div>
     <div class="row">
@@ -658,11 +671,11 @@ inputEl.addEventListener("input", autoGrow);
 
 /* ============ FAZ 3 KOPRULERI ============ */
 window.voiceUser = (text) => { showView("chat"); addMessage("user", "🎙️ " + text); setState("thinking"); };
-window.voiceReply = (reply, actions, isErr, pendingForget) => {
+window.voiceReply = (reply, actions, isErr, pendingForget, pendingTasks) => {
   fxReply();
   addMessage("assistant", reply, isErr, true);
   addActionsNote(actions);
-  checkPendingForget({ pending_forget: pendingForget || [] });
+  checkPendingForget({ pending_forget: pendingForget || [], pending_tasks: pendingTasks || [] });
   if (voiceRepliesOn && !isErr) speakReply(reply); else setState("idle");
   refreshState();
 };
@@ -704,25 +717,46 @@ $("clear-btn").onclick = async () => {
 /* ============ HATIRLATICI ============ */
 window.masonReminder = (text) => { if (text) addActionsNote(["⏰ " + text]); };
 
-/* ============ HAFIZA SILME SIFRESI ============ */
-let _pendingForget = [];
-function checkPendingForget(res) {
-  if (res && res.pending_forget && res.pending_forget.length) {
-    _pendingForget = res.pending_forget.slice();
-    $("pw-input").value = ""; $("pw-err").textContent = "";
-    $("pw-modal-bg").classList.add("show");
-    setTimeout(() => $("pw-input").focus(), 60);
-  }
+/* ============ SILME ONAYI (hafiza + gorev, sifre korumali) ============ */
+let hasDeletePw = false;
+let _pendingDel = { mems: [], tasks: [] };
+
+function _delSummary() {
+  const parts = [];
+  if (_pendingDel.mems.length) parts.push(_pendingDel.mems.length + " hafıza");
+  if (_pendingDel.tasks.length) parts.push(_pendingDel.tasks.length + " görev");
+  return parts.join(" + ");
 }
-$("pw-cancel").onclick = () => { _pendingForget = []; $("pw-modal-bg").classList.remove("show"); addActionsNote(["🔒 Hafıza silme iptal edildi"]); };
+function openDeleteConfirm(memIds, taskIds) {
+  _pendingDel = { mems: (memIds || []).slice(), tasks: (taskIds || []).slice() };
+  $("pw-detail").textContent = "Silinecek: " + _delSummary();
+  $("pw-input").value = ""; $("pw-err").textContent = "";
+  $("pw-modal-bg").classList.add("show");
+  setTimeout(() => $("pw-input").focus(), 60);
+}
+function checkPendingForget(res) {
+  const m = (res && res.pending_forget) || [];
+  const t = (res && res.pending_tasks) || [];
+  if (m.length || t.length) openDeleteConfirm(m, t);
+}
+/* Sekmelerdeki manuel silme: sifre varsa onay penceresi, yoksa direkt */
+async function manualDelete(memIds, taskIds) {
+  if (hasDeletePw) { openDeleteConfirm(memIds, taskIds); return; }
+  await window.pywebview.api.apply_delete(memIds || [], taskIds || [], "");
+  await refreshState();
+}
+$("pw-cancel").onclick = () => { _pendingDel = { mems: [], tasks: [] }; $("pw-modal-bg").classList.remove("show"); addActionsNote(["🔒 Silme iptal edildi"]); };
 $("pw-ok").onclick = async () => {
   const pw = $("pw-input").value;
   try {
-    const r = await window.pywebview.api.apply_forget(_pendingForget, pw);
+    const r = await window.pywebview.api.apply_delete(_pendingDel.mems, _pendingDel.tasks, pw);
     if (r.ok) {
       $("pw-modal-bg").classList.remove("show");
-      addActionsNote(["🗑️ " + r.count + " hafıza silindi"]);
-      _pendingForget = [];
+      const parts = [];
+      if (r.mem_count) parts.push(r.mem_count + " hafıza");
+      if (r.task_count) parts.push(r.task_count + " görev");
+      addActionsNote(["🗑️ Silindi: " + (parts.join(" + ") || "0 kayıt")]);
+      _pendingDel = { mems: [], tasks: [] };
       await refreshState();
     } else {
       $("pw-err").textContent = r.error || "Şifre yanlış";
@@ -776,7 +810,10 @@ function renderPanel() {
       info.innerHTML = '<div class="t-title">' + mdLite(t.title) + "</div>" + (meta ? '<div class="t-meta">' + mdLite(meta) + "</div>" : "");
       const pr = document.createElement("span");
       pr.className = "prio p" + t.priority; pr.textContent = "P" + t.priority;
-      d.appendChild(cb); d.appendChild(info); info.style.flex = "1"; d.appendChild(pr);
+      const del = document.createElement("button");
+      del.className = "del-x"; del.title = "Görevi sil"; del.textContent = "🗑";
+      del.onclick = () => manualDelete([], [t.id]);
+      d.appendChild(cb); d.appendChild(info); info.style.flex = "1"; d.appendChild(pr); d.appendChild(del);
       p.appendChild(d);
     });
   } else if (activeTab === "memory") {
@@ -790,6 +827,10 @@ function renderPanel() {
         const leaf = document.createElement("div");
         leaf.className = "mem-leaf";
         leaf.innerHTML = mdLite(m.content) + ' <span class="cat">[' + m.category + "]</span>";
+        const del = document.createElement("button");
+        del.className = "del-x"; del.title = "Bu hafızayı sil"; del.textContent = "🗑";
+        del.onclick = () => manualDelete([m.id], []);
+        leaf.appendChild(del);
         g.appendChild(leaf);
       });
       p.appendChild(g);
@@ -853,7 +894,8 @@ $("settings-btn").onclick = async () => {
   $("s-stt-lang").value = c.stt_language || "tr";
   $("s-whisper").value = c.whisper_model || "";
   $("s-theme").value = c.theme || "cyan";
-  $("s-mempass").value = c.memory_password || "";
+  hasDeletePw = !!c.has_memory_password;
+  renderPwSection();
   $("s-wake").checked = c.wake_word_enabled !== false;
   $("s-clap").checked = c.clap_enabled !== false;
   $("s-hidden").checked = c.start_hidden === true;
@@ -861,6 +903,39 @@ $("settings-btn").onclick = async () => {
   $("modal-bg").classList.add("show");
 };
 $("s-cancel").onclick = () => $("modal-bg").classList.remove("show");
+
+/* --- Silme sifresi: belirleme / degistirme / kaldirma (double-check) --- */
+function renderPwSection() {
+  $("s-pw-old").style.display = hasDeletePw ? "" : "none";
+  $("s-pw-remove").style.display = hasDeletePw ? "" : "none";
+  $("s-pw-apply").textContent = hasDeletePw ? "ŞİFREYİ DEĞİŞTİR" : "ŞİFRE BELİRLE";
+  $("s-pw-old").value = $("s-pw-new").value = $("s-pw-rep").value = "";
+}
+$("s-pw-apply").onclick = async () => {
+  const st = $("pw-status");
+  if (!$("s-pw-new").value) { st.innerHTML = "⚠️ Yeni şifre boş olamaz"; return; }
+  if ($("s-pw-new").value !== $("s-pw-rep").value) { st.innerHTML = "⚠️ Yeni şifreler birbiriyle uyuşmuyor — iki alana da aynısını yaz"; return; }
+  try {
+    const r = await window.pywebview.api.change_password($("s-pw-old").value, $("s-pw-new").value, $("s-pw-rep").value, false);
+    if (r.ok) {
+      hasDeletePw = !!r.has_password;
+      renderPwSection();
+      st.innerHTML = "✅ Şifre ayarlandı — hafıza ve görev silmeleri artık onay ister";
+    } else st.innerHTML = "⚠️ " + (r.error || "Şifre değiştirilemedi");
+  } catch (e) { st.innerHTML = "⚠️ Hata: " + e; }
+};
+$("s-pw-remove").onclick = async () => {
+  const st = $("pw-status");
+  if (!$("s-pw-old").value) { st.innerHTML = "⚠️ Kaldırmak için eski şifreni gir"; return; }
+  try {
+    const r = await window.pywebview.api.change_password($("s-pw-old").value, "", "", true);
+    if (r.ok) {
+      hasDeletePw = false;
+      renderPwSection();
+      st.innerHTML = "✅ Şifre kaldırıldı — silmeler artık onay istemez";
+    } else st.innerHTML = "⚠️ " + (r.error || "Şifre kaldırılamadı");
+  } catch (e) { st.innerHTML = "⚠️ Hata: " + e; }
+};
 $("s-save").onclick = async () => {
   await window.pywebview.api.save_settings({
     provider: $("s-provider").value,
@@ -874,7 +949,6 @@ $("s-save").onclick = async () => {
     stt_language: $("s-stt-lang").value,
     whisper_model: $("s-whisper").value.trim() || "small",
     theme: $("s-theme").value,
-    memory_password: $("s-mempass").value,
     wake_word_enabled: $("s-wake").checked,
     clap_enabled: $("s-clap").checked,
     start_hidden: $("s-hidden").checked,
@@ -937,6 +1011,7 @@ async function bootSequence() {
   }
   const cfg = await window.pywebview.api.get_settings();
   applyTheme(cfg.theme || "cyan");
+  hasDeletePw = !!cfg.has_memory_password;
   voiceRepliesOn = cfg.voice_replies !== false;
   renderVoiceToggle();
   try {

@@ -12,6 +12,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Sürümleme / Version
 
 ## [Unreleased] — Yayınlanmadı
 
+### Düzeltildi (silme güvenliği)
+- **"Fitness'ı sil" deyince TÜM hafıza siliniyordu:** Sistem promptuna sert SİLME KURALLARI eklendi — `clear_memory` yalnızca kullanıcı açıkça "tüm hafızayı sil" derse kullanılabilir; belirli bir konu için ilgili `#id`'lerle `forget` zorunlu. (Küçük yerel modeller bu kuralı ihlal etmeye meyilliydi.)
+- **Görev silme şifre onayından geçmiyordu:** `delete_task` ve yeni `clear_tasks` aksiyonları da artık şifre korumasına dahil — onay penceresi açılır, şifre doğruysa siler. Onay penceresi artık NE silineceğini de yazar ("Silinecek: 2 hafıza + 1 görev").
+
+### Eklendi (silme & şifre)
+- **Manuel silme:** Hafıza ve Görevler sekmelerinde her kaydın yanında 🗑 butonu. Şifre varsa onay penceresi açılır; yoksa direkt siler (`api.apply_delete`).
+- **Şifre çift kontrol (double-check):** Ayarlar'da şifre ilk kez belirlenirken "yeni + tekrar" iki alana aynı şifre yazılmak zorunda; değiştirirken "eski + yeni + yeni tekrar" istenir; kaldırmak için eski şifre gerekir (`api.change_password`). Şifre artık arayüze hiç gönderilmez (`has_memory_password` bayrağı gider), ayarlar ekranında görünmez.
+
 ### Eklendi (Ollama fazı)
 - **Ollama sağlayıcısı tam çalışır durumda:**
   - Ayarlar'da **⚡ OLLAMA'YI TEST ET** butonu: sunucu ayakta mı, sohbet modeli (`ollama_model`) ve hafıza modeli (`ollama_embedding_model`) yüklü mü — tek tıkla kontrol. Yüklü modeller model kutusuna öneri olarak dolar (`api.ollama_status`).

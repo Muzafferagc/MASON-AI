@@ -63,7 +63,7 @@ sample = """Tamam, kaydettim!
 Baska bir sey var mi?"""
 clean, actions_json = agent.strip_actions(sample)
 check("aksiyon blogu cevaptan temizlenir", "json:actions" not in clean and "Baska bir sey" in clean)
-done, _pending = agent.execute_actions(actions_json)
+done, _pending, _ptasks = agent.execute_actions(actions_json)
 check("aksiyonlar calisir", len(done) == 2)
 check("remember aksiyonu hafizaya yazar",
       any("B1-B2" in m["content"] for m in memory.all_memories()))
@@ -79,13 +79,29 @@ check("fallback gorevi eklendi",
       any(t["title"] == "fallback gorevi" for t in planner.list_tasks("open")))
 
 # Bozuk JSON çökertmemeli
-check("bozuk json sessizce atlanir", agent.execute_actions("{bozuk!!") == ([], []))
+check("bozuk json sessizce atlanir", agent.execute_actions("{bozuk!!") == ([], [], []))
 
 # Sifre korumali toplu hafiza silme: HEMEN silinmez, hepsi pending doner
 _before = memory.all_memory_ids()
-_done, _pending = agent.execute_actions('{"actions":[{"type":"clear_memory"}]}', {"memory_password": "1234"})
+_done, _pending, _ptasks = agent.execute_actions('{"actions":[{"type":"clear_memory"}]}', {"memory_password": "1234"})
 check("clear_memory korumali modda pending doner", set(_pending) == set(_before) and len(_before) > 0)
 check("clear_memory korumali modda henuz silmez", memory.all_memory_ids() == _before)
+
+# Gorev silme de sifre korumali: delete_task pending'e duser, silinmez
+_open_before = [t["id"] for t in planner.list_tasks("all")]
+_did = _open_before[0]
+_done, _pf, _pt = agent.execute_actions(
+    '{"actions":[{"type":"delete_task","id":%d}]}' % _did, {"memory_password": "1234"})
+check("delete_task korumali modda pending doner", _pt == [_did])
+check("delete_task korumali modda henuz silmez",
+      [t["id"] for t in planner.list_tasks("all")] == _open_before)
+
+# clear_tasks: korumasiz modda tum gorevleri siler
+_done, _pf, _pt = agent.execute_actions('{"actions":[{"type":"clear_tasks"}]}')
+check("clear_tasks korumasiz modda hepsini siler",
+      len(planner.list_tasks("all")) == 0 and _pt == [])
+# testlerin devami icin gorevleri geri koy
+planner.add_task("Matematik final calis", "Okul", 1, "2026-07-10")
 
 # ---------- Tam sohbet dongusu (sahte LLM ile) ----------
 class FakeProvider:

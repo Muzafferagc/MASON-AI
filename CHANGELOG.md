@@ -12,6 +12,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Sürümleme / Version
 
 ## [Unreleased] — Yayınlanmadı
 
+### Değişti
+- **API kota sorununa karşı "hybrid" LLM modu:** `provider` artık `hybrid` olabilir. Önce Gemini kullanılır; kota/limit hatası (HTTP 429/503) gelince otomatik olarak yerel Ollama'ya düşer ve `hybrid_cooldown_sec` (varsayılan 900 sn) boyunca doğrudan yerel modeli kullanır — böylece uygulama kota dolunca artık çökmüyor. Embedding'ler de aynı sırayı (Gemini→Ollama) izler.
+
+
 ### Kaldırıldı
 - **`GITHUB_REHBERI.md` git deposundan çıkarıldı:** Kişisel kurulum rehberi artık GitHub'da paylaşılmıyor; yerelde tutuluyor ve tüm commit geçmişinden temizlendi. `.gitignore`'a eklendi.
 
@@ -68,6 +72,4 @@ First working version — core MASON from Phase 1 to Phase 3.
 ### Eklendi / Added
 - **Faz 1:** Sohbet + kalıcı hafıza (SQLite, ağaç yapısı) + görev/plan motoru.
 - **Faz 1.5:** Anlamsal hafıza araması (embeddings / RAG).
-- **Faz 2:** Sesli konuşma — Whisper (ses→yazı) + edge-tts (yazı→ses).
-- **Faz 3:** "Hey Mason" uyandırma + çift alkış + sistem tepsisi.
-- Gemini (ücretsiz kota) ve Ollama sağlayıcı iskeleti; Jarvis temalı ilk arayüz.
+- **Faz 2:** Sesli 

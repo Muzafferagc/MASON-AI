@@ -18,8 +18,12 @@ import requests
 def embed_text(text: str, config: dict) -> list[float] | None:
     """Metni embedding vektorune cevirir. Basarisiz olursa None doner."""
     try:
-        if config.get("provider") == "ollama":
+        provider = config.get("provider", "gemini")
+        if provider == "ollama":
             return _embed_ollama(text, config)
+        if provider == "hybrid":
+            # Once Gemini; kota dolar/basarisiz olursa yerel Ollama'ya dus
+            return _embed_gemini(text, config) or _embed_ollama(text, config)
         return _embed_gemini(text, config)
     except Exception:
         return None  # embedding olmadan da calismaya devam et

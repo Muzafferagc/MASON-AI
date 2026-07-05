@@ -1,15 +1,22 @@
 """
 llm.py - LLM saglayici katmani (Mason'un beyni)
-Iki motor desteklenir:
-  1. Gemini API  - Google'in ucretsiz kotali bulut modeli (varsayilan)
-  2. Ollama      - bilgisayarinda tamamen yerel/ucretsiz calisan modeller
-Ikisi de ayni arayuzu kullanir: chat(system_prompt, messages) -> str
+Uc mod desteklenir:
+  1. gemini  - Google'in ucretsiz kotali bulut modeli (kaliteli, gunluk limitli)
+  2. ollama  - bilgisayarinda tamamen yerel/ucretsiz calisan modeller (sinirsiz)
+  3. hybrid  - once Gemini; kota dolunca (HTTP 429) otomatik yerel Ollama'ya duser
+Hepsi ayni arayuzu kullanir: chat(system_prompt, messages) -> str
 """
+import time
+
 import requests
 
 
 class LLMError(Exception):
     """LLM cagrisi basarisiz oldugunda firlatilir; mesaj kullaniciya gosterilir."""
+
+
+class RateLimitError(LLMError):
+    """Kota/limit asildi ya da model mesgul (HTTP 429/503) - gecici; yedege dusulur."""
 
 
 class GeminiProvider:
@@ -20,14 +27,13 @@ class GeminiProvider:
     def chat(self, system_prompt: str, messages: list[dict]) -> str:
         if not self.api_key:
             raise LLMError(
-                "Gemini API anahtari ayarlanmamis. Sag ustteki ayarlar (⚙) "
-                "bolumunden anahtarini gir. Ucretsiz anahtar: https://aistudio.google.com"
+                "Gemini API anahtari ayarlanmamis. Sag ustteki ayarlar bolumunden "
+                "anahtarini gir. Ucretsiz anahtar: https://aistudio.google.com"
             )
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
             f"{self.model}:generateContent?key={self.api_key}"
         )
-        # Gemini formati: role "user" veya "model"
         contents = [
             {
                 "role": "user" if m["role"] == "user" else "model",
@@ -44,10 +50,12 @@ class GeminiProvider:
             resp = requests.post(url, json=body, timeout=120)
         except requests.RequestException as e:
             raise LLMError(f"Gemini'ye baglanilamadi: {e}") from e
-        if resp.status_code != 200:
-            raise LLMError(
-                f"Gemini hatasi (HTTP {resp.status_code}): {resp.text[:300]}"
+        if resp.status_code in (429, 503):
+            raise RateLimitError(
+                f"Gemini gecici olarak kullanilamiyor (HTTP {resp.status_code})."
             )
+        if resp.status_code != 200:
+            raise LLMError(f"Gemini hatasi (HTTP {resp.status_code}): {resp.text[:300]}")
         data = resp.json()
         try:
             return data["candidates"][0]["content"]["parts"][0]["text"]
@@ -72,16 +80,47 @@ class OllamaProvider:
             )
         except requests.RequestException as e:
             raise LLMError(
-                f"Ollama'ya baglanilamadi ({self.base_url}). "
-                f"Ollama kurulu ve calisiyor mu? (ollama.com) Hata: {e}"
+                f"Ollama'ya baglanilamadi ({self.base_url}). Ollama calisiyor mu? {e}"
             ) from e
         if resp.status_code != 200:
             raise LLMError(f"Ollama hatasi (HTTP {resp.status_code}): {resp.text[:300]}")
         return resp.json()["message"]["content"]
 
 
+class HybridProvider:
+    """
+    Once birincil saglayici (Gemini) denenir. Kota/limit hatasi (429/503) ya da
+    baglanti hatasi olursa yedek saglayiciya (yerel Ollama) duser. Limite
+    takildiktan sonra 'cooldown' suresince dogrudan yedek kullanilir; sure
+    dolunca birincil tekrar denenir.
+    """
+
+    def __init__(self, primary, fallback, cooldown_seconds: int = 900):
+        self.primary = primary
+        self.fallback = fallback
+        self.cooldown_seconds = cooldown_seconds
+        self._primary_blocked_until = 0.0
+
+    def chat(self, system_prompt: str, messages: list[dict]) -> str:
+        if time.time() < self._primary_blocked_until:
+            return self.fallback.chat(system_prompt, messages)
+        try:
+            return self.primary.chat(system_prompt, messages)
+        except RateLimitError:
+            self._primary_blocked_until = time.time() + self.cooldown_seconds
+            return self.fallback.chat(system_prompt, messages)
+        except LLMError:
+            self._primary_blocked_until = time.time() + 60
+            return self.fallback.chat(system_prompt, messages)
+
+
 def get_provider(config: dict):
     """Ayarlara gore dogru LLM saglayicisini dondurur."""
-    if config.get("provider") == "ollama":
+    provider = config.get("provider", "gemini")
+    if provider == "ollama":
         return OllamaProvider(config["ollama_url"], config["ollama_model"])
+    if provider == "hybrid":
+        primary = GeminiProvider(config["gemini_api_key"], config["gemini_model"])
+        fallback = OllamaProvider(config["ollama_url"], config["ollama_model"])
+        return HybridProvider(primary, fallback, int(config.get("hybrid_cooldown_sec", 900)))
     return GeminiProvider(config["gemini_api_key"], config["gemini_model"])

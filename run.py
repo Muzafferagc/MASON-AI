@@ -17,8 +17,8 @@ from pathlib import Path
 
 import webview
 
-from mason import (agent, briefing, documents, ics_export, memory, planner,
-                   reminders, voice, wakeword, weather)
+from mason import (agent, briefing, chats, documents, ics_export, memory,
+                   planner, reminders, voice, wakeword, weather)
 from mason.config import load_config, save_config
 from mason.database import get_conn
 
@@ -137,10 +137,70 @@ class Api:
         return agent.get_history()
 
     def clear_chat(self) -> dict:
-        """Sohbet gecmisini temizler. HAFIZA VE GOREVLER SILINMEZ."""
-        with get_conn() as conn:
-            conn.execute("DELETE FROM messages")
+        """YENİ sohbet: mevcut sohbet KAYITLI KALIR (SOHBETLER'de görünür),
+        sadece yeni bir sohbete geçilir (ekran temizlenir). Hiçbir şey silinmez."""
+        agent.set_active_chat(None)
+        chats.clear_empty_chats()
         return {"ok": True}
+
+    # ---- Sohbet gecmisi (cok-sohbetli, ChatGPT/Gemini gibi) ----
+    def list_chats(self) -> list:
+        """Kayitli sohbetleri (en yeni once) listeler."""
+        return chats.list_chats()
+
+    def load_chat(self, chat_id: int) -> dict:
+        """Eski bir sohbeti acar: aktif yapar ve mesajlarini dondurur."""
+        try:
+            agent.set_active_chat(int(chat_id))
+            return {"ok": True, "id": int(chat_id),
+                    "messages": chats.get_messages(int(chat_id))}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def delete_chat(self, chat_id: int, password: str = "") -> dict:
+        """Bir sohbeti siler. Silme sifresi ayarliysa dogru sifre gerekir."""
+        cfg = load_config()
+        real = cfg.get("memory_password", "")
+        if real and (password or "") != real:
+            return {"ok": False, "error": "Şifre yanlış"}
+        try:
+            if agent.get_active_chat() == int(chat_id):
+                agent.set_active_chat(None)  # acik sohbeti sildiysek temiz ekrana don
+            chats.delete_chat(int(chat_id))
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def rename_chat(self, chat_id: int, title: str) -> dict:
+        try:
+            chats.rename_chat(int(chat_id), title)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def export_chats(self) -> dict:
+        """Tum sohbetleri 'yedekler/' klasorune JSON olarak yazar."""
+        try:
+            items = chats.export_chats()
+            BACKUP_DIR.mkdir(exist_ok=True)
+            fname = f"sohbet_yedek_{time.strftime('%Y%m%d_%H%M%S')}.json"
+            (BACKUP_DIR / fname).write_text(
+                json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+            return {"ok": True, "count": len(items), "file": fname}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def import_chats(self) -> dict:
+        """En yeni sohbet yedeginden sohbetleri geri yukler."""
+        try:
+            files = sorted(BACKUP_DIR.glob("sohbet_yedek_*.json"))
+            if not files:
+                return {"ok": False, "error": "Sohbet yedeği bulunamadı"}
+            items = json.loads(files[-1].read_text(encoding="utf-8"))
+            added = chats.import_chats(items)
+            return {"ok": True, "count": added, "file": files[-1].name}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     def apply_delete(self, mem_ids: list = None, task_ids: list = None,
                      password: str = "", plan_ids: list = None) -> dict:
@@ -232,12 +292,18 @@ class Api:
             return {"ok": False, "error": str(e)}
 
     def list_backups(self) -> list:
-        """'yedekler/' klasorundeki tum yedek dosyalarini (en yeni once)
-        tarih, boyut ve icindeki kayit sayisiyla listeler (YEDEKLER sekmesi)."""
+        """'yedekler/' klasorundeki tum yedek dosyalarini (hem HAFIZA hem SOHBET,
+        en yeni once) tur/tarih/boyut/kayit sayisiyla listeler (YEDEKLER sekmesi)."""
         out = []
         if not BACKUP_DIR.exists():
             return out
-        for p in sorted(BACKUP_DIR.glob("hafiza_yedek_*.json"), reverse=True):
+        pats = [("hafiza_yedek_*.json", "hafıza"), ("sohbet_yedek_*.json", "sohbet")]
+        files = []
+        for pat, kind in pats:
+            for p in BACKUP_DIR.glob(pat):
+                files.append((p, kind))
+        files.sort(key=lambda x: x[0].stat().st_mtime, reverse=True)
+        for p, kind in files:
             try:
                 stt = p.stat()
                 try:
@@ -245,8 +311,7 @@ class Api:
                 except Exception:
                     n = None
                 out.append({
-                    "file": p.name,
-                    "count": n,
+                    "file": p.name, "kind": kind, "count": n,
                     "size_bytes": stt.st_size,
                     "created_at": time.strftime(
                         "%Y-%m-%d %H:%M", time.localtime(stt.st_mtime)),
@@ -256,14 +321,19 @@ class Api:
         return out
 
     def restore_backup(self, file: str) -> dict:
-        """Belirli bir yedek dosyasindan hafizayi geri yukler."""
+        """Bir yedek dosyasindan geri yukler. Dosya adina gore HAFIZA mi SOHBET
+        mi oldugunu anlar."""
         try:
-            p = BACKUP_DIR / Path(file or "").name
+            name = Path(file or "").name
+            p = BACKUP_DIR / name
             if not p.exists():
                 return {"ok": False, "error": "Yedek dosyası bulunamadı"}
             items = json.loads(p.read_text(encoding="utf-8"))
+            if name.startswith("sohbet_yedek_"):
+                added = chats.import_chats(items)
+                return {"ok": True, "count": added, "file": name, "kind": "sohbet"}
             added = memory.import_memories(items, load_config())
-            return {"ok": True, "count": added, "file": p.name}
+            return {"ok": True, "count": added, "file": name, "kind": "hafıza"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -694,10 +764,11 @@ def _on_closing():
 
 
 def _clear_chat_on_start() -> None:
-    """Her acilista temiz ekran: sohbet gecmisini sil. HAFIZA VE GOREVLER KALIR."""
+    """Her acilista TEMIZ EKRANLA basla ama GECMIS SILINMEZ (ChatGPT/Gemini gibi).
+    Onceki sohbetler SOHBETLER sekmesinde durur; sadece yeni bir sohbete geciyoruz."""
     try:
-        with get_conn() as conn:
-            conn.execute("DELETE FROM messages")
+        agent.set_active_chat(None)   # aktif sohbet yok -> ekran temiz, gecmis kalir
+        chats.clear_empty_chats()     # onceki oturumlardan kalan bos sohbetleri temizle
     except Exception:
         pass
 

@@ -12,6 +12,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Sürümleme / Version
 
 ## [Unreleased] — Yayınlanmadı
 
+### Eklendi (Faz 7 — Çok-sohbetli konuşma geçmişi / ChatGPT-Gemini gibi)
+- **Sohbetler artık kaydediliyor ve saklanıyor:** Her sohbet ayrı bir kayıt (conversation). Dock'ta yeni **GEÇMİŞ** sekmesi: tüm sohbetlerin başlık, mesaj sayısı ve tarihiyle listelenir; birine tıklayınca o sohbet ekrana yüklenir ve kaldığın yerden devam edersin. Aktif sohbet vurgulanır. Başlık ilk mesajından otomatik üretilir.
+- **Açılışta artık geçmiş SİLİNMİYOR:** Eskiden her açılışta sohbet temizleniyordu. Artık temiz ekranla başlar ama önceki tüm sohbetler GEÇMİŞ'te durur. "⌦ YENİ" butonu mevcut sohbeti geçmişte bırakıp yeni bir sohbet başlatır.
+- **Her sohbetin bağlamı ayrı:** LLM'e yalnızca aktif sohbetin mesajları verilir; sohbetler birbirine karışmaz.
+- **Sohbet silme:** GEÇMİŞ'te her sohbetin yanında 🗑 (şifre koruması aktifse onay penceresinden geçer; "Silinecek: … + N sohbet").
+- **Sohbet yedekleme:** Ayarlar'da "SOHBETLERİ YEDEKLE / GERİ YÜKLE"; yedekler `yedekler/` klasörüne yazılır ve YEDEKLER sekmesinde 💬 Sohbet olarak (🧠 Hafıza yedeklerinden ayrı) görünür, oradan da geri yüklenip silinebilir.
+- **Yeni:** `mason/chats.py`, `conversations` tablosu + `messages.conversation_id` (eski veritabanları otomatik göç eder — eski mesajlar "Önceki sohbet"e taşınır). `api.list_chats/load_chat/delete_chat/rename_chat/export_chats/import_chats`. 32 yeni test (sohbet + göç) — hepsi geçti.
+
 ### Eklendi (Faz 6 — Kesintisiz konuşma, takvim, bildirim, brifing)
 - **Kesintisiz konuşma modu:** Ayardan açılır. Mason cevabını bitirince (ses bittiğinde) ~8 sn boyunca "Hey Mason" demeden dinlemeye devam eder; konuşursan yeni komut olarak işler, sessizlikte normal wake-word moduna döner. Mevcut "komut penceresi" mekanizması yeniden açılarak yapıldı (`WakeWordListener.open_command_window`, `audio_ended` kancası).
 - **TAKVİM sekmesi:** Dock'ta yeni sekme; aylık ızgara, görevler son tarihine göre günlere yerleşir (öncelik renkli nokta ile), bugün vurgulanır, ‹ › ile ay gezinme. Tamamen yerel.

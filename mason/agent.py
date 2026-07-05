@@ -12,7 +12,7 @@ import json
 import re
 from datetime import datetime
 
-from . import memory, planner, documents
+from . import memory, planner, documents, chats
 from .database import get_conn, rows_to_dicts
 from .llm import get_provider, LLMError
 
@@ -68,21 +68,51 @@ ACTIONS_RE = re.compile(r"```json:actions\s*(.*?)```", re.DOTALL)
 FALLBACK_RE = re.compile(r"```(?:json)?\s*(\{\s*\"actions\".*?)```", re.DOTALL)
 
 
-# ---------- Konusma gecmisi ----------
+# ---------- Konusma gecmisi (cok-sohbetli) ----------
+
+# Su an AKTIF olan sohbetin id'si. None ise ilk mesajda yeni sohbet olusturulur.
+# run.py acilista set_active_chat(None) yaparak temiz ekranla baslar (gecmis silinmez).
+_active_chat: int | None = None
+
+
+def set_active_chat(chat_id) -> None:
+    """Aktif sohbeti degistir (SOHBETLER'den eski bir sohbeti acmak icin)."""
+    global _active_chat
+    _active_chat = int(chat_id) if chat_id else None
+
+
+def get_active_chat():
+    return _active_chat
+
+
+def ensure_chat() -> int:
+    """Aktif sohbet yoksa yeni bir sohbet olusturur ve aktif yapar."""
+    global _active_chat
+    if not _active_chat:
+        _active_chat = chats.create_chat()
+    return _active_chat
+
 
 def save_message(role: str, content: str) -> None:
+    cid = ensure_chat()
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO messages (role, content) VALUES (?, ?)", (role, content)
+            "INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)",
+            (cid, role, content),
         )
+    # Sohbetin zamanini yenile; baslik bossa ilk kullanici mesajindan uret
+    chats.touch(cid, content if role == "user" else None)
 
 
 def get_history(limit: int = 200) -> list[dict]:
+    """Sadece AKTIF sohbetin mesajlarini getirir (her sohbetin baglami ayri)."""
+    if not _active_chat:
+        return []
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM (SELECT * FROM messages ORDER BY id DESC LIMIT ?) "
-            "ORDER BY id ASC",
-            (limit,),
+            "SELECT * FROM (SELECT * FROM messages WHERE conversation_id = ? "
+            "ORDER BY id DESC LIMIT ?) ORDER BY id ASC",
+            (_active_chat, limit),
         ).fetchall()
     return rows_to_dicts(rows)
 
@@ -237,4 +267,4 @@ def chat(user_message: str, config: dict) -> dict:
     save_message("assistant", clean_reply)
     return {"reply": clean_reply, "actions_done": actions_done,
             "error": False, "pending_forget": pending_forget,
-            "pending_tasks": pending_tasks}
+            "pending_tasks": pending_tasks, "chat_id": get_active_chat()}

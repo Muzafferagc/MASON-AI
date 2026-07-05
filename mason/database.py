@@ -27,13 +27,23 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
--- Konusma gecmisi: chat kalicidir
-CREATE TABLE IF NOT EXISTS messages (
+-- Sohbetler: her sohbet ayri kaydedilir (ChatGPT/Gemini gibi gecmis)
+CREATE TABLE IF NOT EXISTS conversations (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    role       TEXT NOT NULL,               -- user / assistant
-    content    TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+    title      TEXT,                        -- ilk mesajdan otomatik baslik
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
+
+-- Konusma gecmisi: chat kalicidir (her mesaj bir sohbete baglidir)
+CREATE TABLE IF NOT EXISTS messages (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER,                -- bagli oldugu sohbet
+    role            TEXT NOT NULL,          -- user / assistant
+    content         TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
 
 -- Kaydedilen planlar (gunluk/haftalik/aylik)
 CREATE TABLE IF NOT EXISTS plans (
@@ -94,6 +104,24 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "embedding" not in cols:
         # Faz 1.5: hafizanin anlam vektoru (JSON listesi olarak saklanir)
         conn.execute("ALTER TABLE memories ADD COLUMN embedding TEXT")
+
+    # Faz 7: mesajlari sohbetlere bagla (cok-sohbetli gecmis)
+    mcols = [r[1] for r in conn.execute("PRAGMA table_info(messages)")]
+    if "conversation_id" not in mcols:
+        conn.execute("ALTER TABLE messages ADD COLUMN conversation_id INTEGER")
+        # Sahipsiz eski mesajlar varsa hepsini tek bir "Onceki sohbet"e tasi
+        orphan = conn.execute(
+            "SELECT COUNT(*) FROM messages WHERE conversation_id IS NULL"
+        ).fetchone()[0]
+        if orphan:
+            cur = conn.execute(
+                "INSERT INTO conversations (title) VALUES ('Önceki sohbet')"
+            )
+            conn.execute(
+                "UPDATE messages SET conversation_id = ? "
+                "WHERE conversation_id IS NULL",
+                (cur.lastrowid,),
+            )
 
 
 def rows_to_dicts(rows) -> list[dict]:

@@ -398,4 +398,41 @@ from mason.wakeword import WakeWordListener
 check("wake: open_command_window metodu var",
       hasattr(WakeWordListener, "open_command_window"))
 
+# ---------- Faz 7: Cok-sohbetli konusma gecmisi ----------
+from mason import chats
+
+_c1 = chats.create_chat()
+agent.set_active_chat(_c1)
+agent.save_message("user", "Python nasıl öğrenilir")
+agent.save_message("assistant", "Şöyle başla...")
+check("sohbet: aktif sohbete mesaj kaydedilir", len(agent.get_history()) == 2)
+_lst = chats.list_chats()
+check("sohbet: listede görünür", any(c["id"] == _c1 for c in _lst))
+_this = [c for c in _lst if c["id"] == _c1][0]
+check("sohbet: başlık ilk mesajdan üretilir", _this["title"].startswith("Python"))
+check("sohbet: mesaj sayısı doğru", _this["msg_count"] == 2)
+
+# Yeni sohbet: aktif None -> ilk mesaj yeni sohbet olusturur, gecmis kalir
+agent.set_active_chat(None)
+check("sohbet: yeni sohbette geçmiş boş görünür", agent.get_history() == [])
+agent.save_message("user", "İkinci sohbet")
+_c2 = agent.get_active_chat()
+check("sohbet: yeni mesaj yeni sohbet açar", _c2 and _c2 != _c1)
+check("sohbet: eski sohbet hâlâ duruyor",
+      any(c["id"] == _c1 for c in chats.list_chats()))
+
+# Eski sohbeti geri yükle
+_msgs = chats.get_messages(_c1)
+check("sohbet: eski sohbet mesajları okunur", len(_msgs) == 2)
+
+# Yedekle / geri yükle
+_dump = chats.export_chats()
+check("sohbet: export sohbetleri verir", len(_dump) >= 2)
+check("sohbet: import dedup 0 ekler", chats.import_chats(_dump) == 0)
+
+# Sil
+chats.delete_chat(_c1)
+check("sohbet: silinir", not any(c["id"] == _c1 for c in chats.list_chats()))
+check("sohbet: silinen sohbetin mesajları da gider", chats.get_messages(_c1) == [])
+
 print(f"\nTUM TESTLER GECTI ({passed}/{passed})")

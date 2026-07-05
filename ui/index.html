@@ -197,6 +197,8 @@
   .chat-item { cursor: pointer; }
   .chat-item.active { border-color: var(--stroke-2); background: rgba(var(--accentRGB),.08); box-shadow: 0 0 14px rgba(var(--accentRGB),.15) inset; }
   .chat-item.active .d-title { color: var(--cyan); }
+  .new-chat-btn { width: 100%; margin-bottom: 12px; padding: 12px; background: rgba(var(--accentRGB),.08); border: 1px solid var(--stroke-2); border-radius: 12px; color: var(--cyan); font-family: var(--hud); font-size: 11px; letter-spacing: 2px; cursor: pointer; transition: .2s; }
+  .new-chat-btn:hover { background: rgba(var(--accentRGB),.16); box-shadow: 0 0 16px rgba(var(--accentRGB),.2); }
   .mini-btn { background: rgba(var(--accentRGB),.08); border: 1px solid var(--stroke); color: var(--cyan); font-family: var(--hud); font-size: 8.5px; letter-spacing: 1px; padding: 5px 9px; border-radius: 9px; cursor: pointer; transition: .2s; white-space: nowrap; }
   .mini-btn:hover { background: rgba(var(--accentRGB),.16); border-color: var(--stroke-2); box-shadow: 0 0 12px rgba(var(--accentRGB),.15); }
   .mini-btn:disabled { opacity: .5; cursor: default; }
@@ -789,14 +791,17 @@ $("mic").onclick = async () => {
 };
 
 /* ============ YENI SOHBET ============ */
-$("clear-btn").onclick = async () => {
-  await window.pywebview.api.clear_chat();  // mevcut sohbet GEÇMİŞ'te kalır, yeni sohbet başlar
+/* Yeni sohbet başlat: mevcut sohbet GEÇMİŞ'te kalır, ekran temizlenir. */
+async function newChat() {
+  await window.pywebview.api.clear_chat();
   activeChatId = null;
   messagesEl.innerHTML = "";
   showView("chat");
-  addMessage("assistant", "Yeni sohbet başladı. Önceki konuşmalar GEÇMİŞ sekmesinde duruyor — hiçbir şeyi unutmadım.", false, true);
+  addMessage("assistant", "Yeni sohbet başladı, Muzaffer. Önceki konuşmalar GEÇMİŞ sekmesinde duruyor — hiçbir şeyi unutmadım.", false, true);
+  inputEl.focus();
   refreshState();
-};
+}
+$("clear-btn").onclick = newChat;
 
 /* ============ SOHBET GEÇMİŞİ ============ */
 let activeChatId = null;
@@ -1087,7 +1092,11 @@ function renderPanel() {
     });
   } else if (activeTab === "chats") {
     const cs = state.chats || [];
-    if (!cs.length) { p.innerHTML = '<div class="empty">HENÜZ KAYITLI SOHBET YOK<br><br>KONUŞMAYA BAŞLA — HER SOHBET BURADA SAKLANIR</div>'; return; }
+    const nb = document.createElement("button");
+    nb.className = "new-chat-btn"; nb.innerHTML = "+ YENİ SOHBET";
+    nb.onclick = () => newChat();
+    p.appendChild(nb);
+    if (!cs.length) { const e = document.createElement("div"); e.className = "empty"; e.style.marginTop = "30px"; e.innerHTML = "HENÜZ KAYITLI SOHBET YOK<br><br>KONUŞMAYA BAŞLA — HER SOHBET BURADA SAKLANIR"; p.appendChild(e); return; }
     cs.forEach((c) => {
       const d = document.createElement("div");
       d.className = "doc-item chat-item" + (c.id === activeChatId ? " active" : "");

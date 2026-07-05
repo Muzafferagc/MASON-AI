@@ -208,7 +208,23 @@ def strip_actions(text: str) -> tuple[str, str | None]:
 # ---------- Ana giris noktasi ----------
 
 def chat(user_message: str, config: dict) -> dict:
-    """Kullanici mesajini isler; Mason'un cevabini ve yapilan islemleri dondurur."""
+    """Kullanici mesajini isler; Mason'un cevabini ve yapilan islemleri dondurur.
+
+    DAYANIKLILIK: Bu fonksiyon ASLA istisna firlatmaz — her durumda bir sozluk
+    dondurur. Aksi halde sesli komut yolunda (run.py _on_command) istisna
+    olusursa arayuz 'İŞLİYORUM'da takili kalirdi. Beklenmedik her hata,
+    kullaniciya anlasilir bir mesaj olarak doner."""
+    try:
+        return _chat(user_message, config)
+    except LLMError as e:
+        return {"reply": f"⚠️ {e}", "actions_done": [], "error": True,
+                "chat_id": get_active_chat()}
+    except Exception as e:  # noqa: BLE001 - UI asla kilitlenmesin
+        return {"reply": f"⚠️ Beklenmedik bir hata oluştu: {e}",
+                "actions_done": [], "error": True, "chat_id": get_active_chat()}
+
+
+def _chat(user_message: str, config: dict) -> dict:
     save_message("user", user_message)
 
     doc_context = documents.format_for_prompt(query=user_message, config=config)
@@ -249,10 +265,8 @@ def chat(user_message: str, config: dict) -> dict:
     llm_messages = [{"role": h["role"], "content": h["content"]} for h in history]
 
     provider = get_provider(config)
-    try:
-        raw_reply = provider.chat(system_prompt, llm_messages)
-    except LLMError as e:
-        return {"reply": f"⚠️ {e}", "actions_done": [], "error": True}
+    # LLMError disaridaki chat() sarmalayicisinda yakalanir (chat_id ile birlikte).
+    raw_reply = provider.chat(system_prompt, llm_messages)
 
     clean_reply, actions_json = strip_actions(raw_reply)
     if actions_json:

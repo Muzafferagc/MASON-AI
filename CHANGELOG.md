@@ -12,6 +12,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Sürümleme / Version
 
 ## [Unreleased] — Yayınlanmadı
 
+### Düzeltildi (dayanıklılık — sesli komut takılması)
+- **Ollama'da sesli komut "İŞLİYORUM"da takılıp kalıyordu:** İki kök neden vardı. (1) Birçok arka plan thread'i (sohbet + hatırlatıcı + brifing + embedding) aynı anda veritabanına eriştiğinde SQLite "database is locked" hatası verip sesli komut yolunu çökertiyordu → artık **WAL modu + busy_timeout** ile eşzamanlı erişim güvenli. (2) Sesli komut yolunda (`_on_command`) hata yakalama yoktu; bir istisna olunca arayüz kilitleniyordu → artık `agent.chat` **asla istisna fırlatmıyor** (her durumda anlaşılır bir yanıt/hatayla dönüyor) ve `_on_command` her durumda `voiceReply` çağırıp arayüzü serbest bırakıyor. Kısacası Ollama yavaş/hatalı olsa bile ekran artık takılmıyor.
+
+### Eklendi
+- **Belirgin "+ YENİ SOHBET" butonu:** GEÇMİŞ sekmesinin en üstünde büyük bir buton; ayrıca dock'taki "⌦ YENİ" ile aynı işi yapar (mevcut sohbeti geçmişte bırakıp yeni sohbet başlatır).
+- **Brifing tetikleme penceresi:** Sabah brifingi artık yalnızca hedef saatten sonraki ~2 saatlik pencerede tetiklenir; uygulamayı gece geç açınca yanlışlıkla brifing patlamaz.
+
 ### Eklendi (Faz 7 — Çok-sohbetli konuşma geçmişi / ChatGPT-Gemini gibi)
 - **Sohbetler artık kaydediliyor ve saklanıyor:** Her sohbet ayrı bir kayıt (conversation). Dock'ta yeni **GEÇMİŞ** sekmesi: tüm sohbetlerin başlık, mesaj sayısı ve tarihiyle listelenir; birine tıklayınca o sohbet ekrana yüklenir ve kaldığın yerden devam edersin. Aktif sohbet vurgulanır. Başlık ilk mesajından otomatik üretilir.
 - **Açılışta artık geçmiş SİLİNMİYOR:** Eskiden her açılışta sohbet temizleniyordu. Artık temiz ekranla başlar ama önceki tüm sohbetler GEÇMİŞ'te durur. "⌦ YENİ" butonu mevcut sohbeti geçmişte bırakıp yeni bir sohbet başlatır.

@@ -90,9 +90,22 @@ CREATE TABLE IF NOT EXISTS forgotten (
 
 
 def get_conn() -> sqlite3.Connection:
-    """Veritabani baglantisi acar (tablolar yoksa olusturur)."""
-    conn = sqlite3.connect(DB_FILE)
+    """Veritabani baglantisi acar (tablolar yoksa olusturur).
+
+    ONEMLI: MASON'da ayni anda BIRDEN COK thread veritabanina erisir
+    (sohbet + hatirlatici dongusu + brifing dongusu + embedding arka plani +
+    sesli komut). Varsayilan SQLite bu durumda kolayca 'database is locked'
+    hatasi verir -> sesli komut takilir/coker. Bunu onlemek icin:
+      - WAL modu: okuyucular yazana engel olmaz (cok daha az kilit)
+      - busy_timeout: kilit varsa hemen hata vermek yerine 8 sn bekle"""
+    conn = sqlite3.connect(DB_FILE, timeout=8.0)
     conn.row_factory = sqlite3.Row  # sonuclara sozluk gibi erisim
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=8000")
+        conn.execute("PRAGMA synchronous=NORMAL")
+    except sqlite3.Error:
+        pass
     conn.executescript(SCHEMA)
     _migrate(conn)
     return conn

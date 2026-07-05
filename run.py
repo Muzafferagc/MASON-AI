@@ -37,6 +37,7 @@ _lock_sock = None        # tek ornek kilidi soketi (acik kalmali)
 _force_show = False      # --show ile baslatildiysa gizleme ayarini yok say
 _speaking_until = 0.0    # Mason konusurken kendini duymasin diye
 _last_reply_text = ""    # Mason'un su an okudugu cevap (barge-in self-trigger'i engeller)
+_skip_continuous = False # uyku moduna gecerken kesintisiz dinlemeyi bir kez atla
 
 
 def _mark_speaking(text: str) -> None:
@@ -90,6 +91,8 @@ def _hide_to_tray() -> None:
 
 def _do_sleep(text: str) -> dict:
     """'Kendini kapat' komutu: kisa bir onay ver, sonra pencereyi gizle."""
+    global _skip_continuous
+    _skip_continuous = True  # uyurken kesintisiz dinleme penceresini acma
     try:
         agent.save_message("user", text)
     except Exception:
@@ -536,9 +539,12 @@ class Api:
         KESINTISIZ KONUSMA MODU: ayar acikça ise, ses bittikten hemen sonra
         komut penceresini yeniden acariz -> kullanici 'Hey Mason' demeden
         konusmaya devam edebilir."""
-        global _speaking_until, _last_reply_text
+        global _speaking_until, _last_reply_text, _skip_continuous
         _speaking_until = 0.0
         _last_reply_text = ""
+        if _skip_continuous:
+            _skip_continuous = False  # uyku sonrasi bir kez atla
+            return {"ok": True}
         cfg = load_config()
         if cfg.get("continuous_mode") and listener is not None:
             try:
@@ -673,17 +679,40 @@ def _on_wake_only() -> None:
 
 
 def _on_command(text: str) -> None:
-    """Sesli komut algilandi: chat'e isle, cevabi UI'a ve hoparlore gonder."""
+    """Sesli komut algilandi: chat'e isle, cevabi UI'a ve hoparlore gonder.
+
+    DAYANIKLILIK: cevap uretimi (ozellikle yavas/hatali Ollama) bir istisna
+    firlatirsa bile UI 'İŞLİYORUM'da ASLA takili kalmasin diye her durumda
+    voiceReply cagrilir. Bir hata olursa kullaniciya anlasilir mesaj gider."""
     _show_window()
     _js(f"voiceUser({json.dumps(text)})")
-    if _looks_like_sleep(text):
-        result = _do_sleep(text)  # "kendini kapat" -> onay ver, sonra gizlen
-    else:
-        result = agent.chat(text, load_config())
-    _js(f"voiceReply({json.dumps(result['reply'])}, "
-        f"{json.dumps(result['actions_done'])}, {json.dumps(result['error'])}, "
-        f"{json.dumps(result.get('pending_forget', []))}, "
-        f"{json.dumps(result.get('pending_tasks', []))})")
+    try:
+        if _looks_like_sleep(text):
+            result = _do_sleep(text)  # "kendini kapat" -> onay ver, sonra gizlen
+        else:
+            result = agent.chat(text, load_config())
+    except Exception as e:  # noqa: BLE001 - UI kilitlenmesin
+        result = {"reply": f"⚠️ Bir hata oluştu: {e}", "actions_done": [],
+                  "error": True}
+    try:
+        _js(f"voiceReply({json.dumps(result.get('reply', ''))}, "
+            f"{json.dumps(result.get('actions_done', []))}, "
+            f"{json.dumps(result.get('error', False))}, "
+            f"{json.dumps(result.get('pending_forget', []))}, "
+            f"{json.dumps(result.get('pending_tasks', []))})")
+    except Exception:
+        pass
+    # KESINTISIZ MOD: sesli yanit KAPALIYSA audio_ended tetiklenmez; komut
+    # penceresini burada acalim ki yine "Hey Mason" demeden devam edilebilsin.
+    try:
+        cfg = load_config()
+        if (cfg.get("continuous_mode") and listener is not None
+                and not cfg.get("voice_replies", True)
+                and not _looks_like_sleep(text)):
+            listener.open_command_window(cfg.get("continuous_window_sec", 8))
+            _js("setState('listening')")
+    except Exception:
+        pass
 
 
 def _on_wake_status(status: str) -> None:
@@ -851,20 +880,31 @@ def _reminder_loop() -> None:
         time.sleep(REMINDER_INTERVAL)
 
 
+def _to_minutes(hhmm: str) -> int:
+    """'HH:MM' -> gun icindeki dakika. Bozuksa -1."""
+    try:
+        h, m = str(hhmm)[:5].split(":")
+        return int(h) * 60 + int(m)
+    except Exception:
+        return -1
+
+
 def _briefing_loop() -> None:
-    """Her dakika kontrol eder: brifing acikça ve saati geldiyse (gunde bir kez)
-    sabah brifingini sunar."""
+    """Her dakika kontrol eder: brifing acikça ve saati geldiyse sabah brifingini
+    sunar (gunde bir kez). Uygulama gec acilirsa gece yarisi patlamamasi icin
+    yalnizca hedef saatten sonraki ~2 saatlik pencere icinde tetiklenir."""
     time.sleep(12)  # acilisin oturmasini bekle
     last_briefed_day = None
     while True:
         try:
             cfg = load_config()
             if cfg.get("briefing_enabled"):
-                now = time.strftime("%H:%M")
                 today = time.strftime("%Y-%m-%d")
-                target = str(cfg.get("briefing_time", "08:00"))[:5]
-                # Saat hedefe ulastiysa ve bugun henuz brifing yapilmadiysa
-                if now >= target and last_briefed_day != today:
+                now_min = _to_minutes(time.strftime("%H:%M"))
+                target_min = _to_minutes(str(cfg.get("briefing_time", "08:00")))
+                # Hedef saatten sonra, en fazla 2 saatlik yakalama penceresi
+                if (target_min >= 0 and 0 <= now_min - target_min <= 120
+                        and last_briefed_day != today):
                     last_briefed_day = today
                     _fire_briefing(cfg)
         except Exception:

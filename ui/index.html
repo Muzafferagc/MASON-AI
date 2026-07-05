@@ -194,6 +194,11 @@
   .doc-item .d-title { font-size: 14px; font-weight: 500; word-break: break-word; }
   .doc-item .d-meta { font-size: 10.5px; color: var(--muted); margin-top: 3px; font-family: var(--mono); }
   .doc-item .d-preview { font-size: 12px; color: var(--muted); margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--stroke); line-height: 1.5; max-height: 54px; overflow: hidden; }
+  .mini-btn { background: rgba(var(--accentRGB),.08); border: 1px solid var(--stroke); color: var(--cyan); font-family: var(--hud); font-size: 8.5px; letter-spacing: 1px; padding: 5px 9px; border-radius: 9px; cursor: pointer; transition: .2s; white-space: nowrap; }
+  .mini-btn:hover { background: rgba(var(--accentRGB),.16); border-color: var(--stroke-2); box-shadow: 0 0 12px rgba(var(--accentRGB),.15); }
+  .mini-btn:disabled { opacity: .5; cursor: default; }
+  .plan-item .p-head { display: flex; align-items: center; gap: 8px; }
+  .plan-item .p-head .p-title { flex: 1; }
   /* ---- Surukle-birak katmani ---- */
   #dropzone { position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center; background: rgba(4,7,13,.72); backdrop-filter: blur(6px); }
   #dropzone.show { display: flex; animation: msgIn .18s; }
@@ -319,6 +324,7 @@
     <button class="nav-btn" data-view="memory">HAFIZA<span class="cnt" id="c-mem"></span></button>
     <button class="nav-btn" data-view="plans">PLANLAR<span class="cnt" id="c-plan"></span></button>
     <button class="nav-btn" data-view="documents">BELGELER<span class="cnt" id="c-doc"></span></button>
+    <button class="nav-btn" data-view="backups">YEDEKLER<span class="cnt" id="c-bak"></span></button>
     <div class="dock-sep"></div>
     <button class="act-btn" id="upload-btn" title="Dosya yükle (PDF, Word, Excel, görsel, ses, kod...)">📎</button>
     <button class="act-btn" id="voice-toggle" title="Sesli yanıt aç/kapat">🔊</button>
@@ -748,17 +754,20 @@ window.masonReminder = (text) => { if (text) addActionsNote(["⏰ " + text]); };
 
 /* ============ SILME ONAYI (hafiza + gorev, sifre korumali) ============ */
 let hasDeletePw = false;
-let _pendingDel = { mems: [], tasks: [], docs: [] };
+const _emptyDel = () => ({ mems: [], tasks: [], docs: [], plans: [] });
+let _pendingDel = _emptyDel();
 
 function _delSummary() {
   const parts = [];
   if (_pendingDel.mems.length) parts.push(_pendingDel.mems.length + " hafıza");
   if (_pendingDel.tasks.length) parts.push(_pendingDel.tasks.length + " görev");
+  if (_pendingDel.plans.length) parts.push(_pendingDel.plans.length + " plan");
   if (_pendingDel.docs.length) parts.push(_pendingDel.docs.length + " belge");
   return parts.join(" + ");
 }
-function openDeleteConfirm(memIds, taskIds, docIds) {
-  _pendingDel = { mems: (memIds || []).slice(), tasks: (taskIds || []).slice(), docs: (docIds || []).slice() };
+function openDeleteConfirm(memIds, taskIds, docIds, planIds) {
+  _pendingDel = { mems: (memIds || []).slice(), tasks: (taskIds || []).slice(),
+                  docs: (docIds || []).slice(), plans: (planIds || []).slice() };
   $("pw-detail").textContent = "Silinecek: " + _delSummary();
   $("pw-input").value = ""; $("pw-err").textContent = "";
   $("pw-modal-bg").classList.add("show");
@@ -767,29 +776,35 @@ function openDeleteConfirm(memIds, taskIds, docIds) {
 function checkPendingForget(res) {
   const m = (res && res.pending_forget) || [];
   const t = (res && res.pending_tasks) || [];
-  if (m.length || t.length) openDeleteConfirm(m, t, []);
+  if (m.length || t.length) openDeleteConfirm(m, t, [], []);
 }
 /* Sekmelerdeki manuel silme: sifre varsa onay penceresi, yoksa direkt */
 async function manualDelete(memIds, taskIds) {
-  if (hasDeletePw) { openDeleteConfirm(memIds, taskIds, []); return; }
-  await window.pywebview.api.apply_delete(memIds || [], taskIds || [], "");
+  if (hasDeletePw) { openDeleteConfirm(memIds, taskIds, [], []); return; }
+  await window.pywebview.api.apply_delete(memIds || [], taskIds || [], "", []);
+  await refreshState();
+}
+async function manualDeletePlan(planId) {
+  if (hasDeletePw) { openDeleteConfirm([], [], [], [planId]); return; }
+  await window.pywebview.api.apply_delete([], [], "", [planId]);
+  addActionsNote(["🗑️ Plan silindi"]);
   await refreshState();
 }
 async function manualDeleteDoc(docId) {
-  if (hasDeletePw) { openDeleteConfirm([], [], [docId]); return; }
+  if (hasDeletePw) { openDeleteConfirm([], [], [docId], []); return; }
   await window.pywebview.api.delete_document(docId, "");
   addActionsNote(["🗑️ Belge silindi"]);
   await refreshState();
 }
-$("pw-cancel").onclick = () => { _pendingDel = { mems: [], tasks: [], docs: [] }; $("pw-modal-bg").classList.remove("show"); addActionsNote(["🔒 Silme iptal edildi"]); };
+$("pw-cancel").onclick = () => { _pendingDel = _emptyDel(); $("pw-modal-bg").classList.remove("show"); addActionsNote(["🔒 Silme iptal edildi"]); };
 $("pw-ok").onclick = async () => {
   const pw = $("pw-input").value;
   try {
-    let memCount = 0, taskCount = 0, docCount = 0;
-    if (_pendingDel.mems.length || _pendingDel.tasks.length) {
-      const r = await window.pywebview.api.apply_delete(_pendingDel.mems, _pendingDel.tasks, pw);
+    let memCount = 0, taskCount = 0, planCount = 0, docCount = 0;
+    if (_pendingDel.mems.length || _pendingDel.tasks.length || _pendingDel.plans.length) {
+      const r = await window.pywebview.api.apply_delete(_pendingDel.mems, _pendingDel.tasks, pw, _pendingDel.plans);
       if (!r.ok) { $("pw-err").textContent = r.error || "Şifre yanlış"; return; }
-      memCount = r.mem_count || 0; taskCount = r.task_count || 0;
+      memCount = r.mem_count || 0; taskCount = r.task_count || 0; planCount = r.plan_count || 0;
     }
     for (const id of _pendingDel.docs) {
       const dr = await window.pywebview.api.delete_document(id, pw);
@@ -800,16 +815,17 @@ $("pw-ok").onclick = async () => {
     const parts = [];
     if (memCount) parts.push(memCount + " hafıza");
     if (taskCount) parts.push(taskCount + " görev");
+    if (planCount) parts.push(planCount + " plan");
     if (docCount) parts.push(docCount + " belge");
     addActionsNote(["🗑️ Silindi: " + (parts.join(" + ") || "0 kayıt")]);
-    _pendingDel = { mems: [], tasks: [], docs: [] };
+    _pendingDel = _emptyDel();
     await refreshState();
   } catch (e) { $("pw-err").textContent = "Hata: " + e; }
 };
 $("pw-input").addEventListener("keydown", (e) => { if (e.key === "Enter") $("pw-ok").click(); });
 
 /* ============ GORUNUM / NAV ============ */
-const PANEL_TITLE = { tasks: "GÖREVLER", memory: "HAFIZA BANKASI", plans: "PLANLAR", documents: "BELGE BANKASI" };
+const PANEL_TITLE = { tasks: "GÖREVLER", memory: "HAFIZA BANKASI", plans: "PLANLAR", documents: "BELGE BANKASI", backups: "YEDEKLER" };
 function showView(v) {
   const isChat = v === "chat";
   $("chat-view").style.display = isChat ? "flex" : "none";
@@ -887,12 +903,15 @@ window.addEventListener("drop", (e) => {
 
 async function refreshState() {
   state = await window.pywebview.api.get_state();
+  try { state.backups = await window.pywebview.api.list_backups(); } catch (e) { state.backups = []; }
   const memCount = Object.values(state.memory_tree).reduce((a, v) => a + v.length, 0);
   const openTasks = state.tasks.filter((t) => t.status !== "done").length;
   const docCount = (state.documents || []).length;
+  const bakCount = (state.backups || []).length;
   animateNum("st-mem", memCount); animateNum("st-task", openTasks); animateNum("st-plan", state.plans.length);
   $("c-mem").textContent = memCount ? "·" + memCount : ""; $("c-task").textContent = openTasks ? "·" + openTasks : ""; $("c-plan").textContent = state.plans.length ? "·" + state.plans.length : "";
   const cdoc = $("c-doc"); if (cdoc) cdoc.textContent = docCount ? "·" + docCount : "";
+  const cbak = $("c-bak"); if (cbak) cbak.textContent = bakCount ? "·" + bakCount : "";
   if ($("panel-view").style.display !== "none") renderPanel();
 }
 function animateNum(id, target) {
@@ -967,13 +986,45 @@ function renderPanel() {
       }
       p.appendChild(d);
     });
+  } else if (activeTab === "backups") {
+    const bks = state.backups || [];
+    if (!bks.length) { p.innerHTML = '<div class="empty">KAYITLI YEDEK YOK<br><br>AYARLAR → DIŞA AKTAR İLE YEDEK AL</div>'; return; }
+    bks.forEach((b) => {
+      const d = document.createElement("div");
+      d.className = "doc-item";
+      const meta = [(b.count != null ? b.count + " kayıt" : null), humanSize(b.size_bytes), b.created_at].filter(Boolean).join("  ·  ");
+      const head = document.createElement("div"); head.className = "doc-head";
+      head.innerHTML = '<span class="doc-ic">💾</span><div class="doc-info"><div class="d-title">' + mdLite(b.file) + '</div><div class="d-meta">' + mdLite(meta) + '</div></div>';
+      const restore = document.createElement("button");
+      restore.className = "mini-btn"; restore.title = "Bu yedeği geri yükle"; restore.textContent = "↺ GERİ YÜKLE";
+      restore.onclick = async () => {
+        restore.disabled = true; restore.textContent = "⏳";
+        const r = await window.pywebview.api.restore_backup(b.file);
+        addActionsNote([r.ok ? "✅ " + r.count + " hafıza geri yüklendi (" + r.file + ")" : "⚠️ " + (r.error || "geri yükleme başarısız")]);
+        await refreshState();
+      };
+      const del = document.createElement("button");
+      del.className = "del-x"; del.title = "Bu yedeği sil"; del.textContent = "🗑";
+      del.onclick = async () => {
+        const r = await window.pywebview.api.delete_backup(b.file, "");
+        if (!r.ok) { addActionsNote(["⚠️ " + (r.error || "silinemedi")]); return; }
+        addActionsNote(["🗑️ Yedek silindi"]); await refreshState();
+      };
+      head.appendChild(restore); head.appendChild(del);
+      d.appendChild(head);
+      p.appendChild(d);
+    });
   } else {
     if (!state.plans.length) { p.innerHTML = '<div class="empty">KAYITLI PLAN YOK<br><br>HAFTALIK PLAN İSTE</div>'; return; }
     state.plans.forEach((pl) => {
       const d = document.createElement("div");
       d.className = "plan-item";
-      d.innerHTML = '<div class="p-title">▸ ' + mdLite(pl.title) + '</div><div class="p-meta">' + pl.period + " · " + pl.created_at + '</div><div class="p-body">' + mdLite(pl.content) + "</div>";
+      d.innerHTML = '<div class="p-head"><div class="p-title">▸ ' + mdLite(pl.title) + '</div></div><div class="p-meta">' + pl.period + " · " + pl.created_at + '</div><div class="p-body">' + mdLite(pl.content) + "</div>";
       d.querySelector(".p-title").onclick = () => d.classList.toggle("open");
+      const del = document.createElement("button");
+      del.className = "del-x"; del.title = "Bu planı sil"; del.textContent = "🗑";
+      del.onclick = (e) => { e.stopPropagation(); manualDeletePlan(pl.id); };
+      d.querySelector(".p-head").appendChild(del);
       p.appendChild(d);
     });
   }

@@ -337,4 +337,37 @@ check("belge yokken prompt bos", docs.format_for_prompt("x", None) == "")
 check("agent: prompt sablonu {documents} placeholder'i icerir",
       "{documents}" in agent.SYSTEM_PROMPT_TEMPLATE)
 
+# ---------- Faz 5: Silinen bilgi korumasi (forgotten / tombstone) ----------
+_fid = memory.remember("Muzaffer fitness yapiyor", "fact")
+check("tombstone: hafizaya eklendi", _fid > 0)
+memory.forget(_fid)
+check("tombstone: silindi", not any(
+    m["content"] == "Muzaffer fitness yapiyor" for m in memory.all_memories()))
+check("tombstone: forgotten listesine yazildi",
+      memory.is_forgotten("Muzaffer fitness yapiyor"))
+check("tombstone: silinen bilgi GERI EKLENEMEZ (id=0)",
+      memory.remember("Muzaffer fitness yapiyor", "fact") == 0)
+check("tombstone: gercekten geri eklenmedi", not any(
+    m["content"] == "Muzaffer fitness yapiyor" for m in memory.all_memories()))
+check("tombstone: forgotten_list gorunur",
+      "Muzaffer fitness yapiyor" in memory.forgotten_list())
+_added = memory.import_memories([{"content": "Muzaffer fitness yapiyor", "category": "fact"}])
+check("tombstone: yedekten import geri yukler", _added == 1)
+check("tombstone: import forgotten kaydini temizler",
+      not memory.is_forgotten("Muzaffer fitness yapiyor"))
+
+# ---------- Faz 5: Plan silme ----------
+_pid = planner.save_plan("daily", "Silinecek Plan", "- test")
+check("plan: kaydedildi", any(p["id"] == _pid for p in planner.list_plans()))
+planner.delete_plan(_pid)
+check("plan: silindi", not any(p["id"] == _pid for p in planner.list_plans()))
+check("plan: all_plan_ids calisir", isinstance(planner.all_plan_ids(), list))
+
+# ---------- Faz 5: Ollama num_ctx (uzun promptun kesilmemesi) ----------
+from mason.llm import OllamaProvider
+check("ollama: num_ctx varsayilan 8192 (2048 degil)",
+      OllamaProvider().num_ctx == 8192)
+check("ollama: num_ctx config'ten ayarlanir",
+      OllamaProvider(num_ctx=4096).num_ctx == 4096)
+
 print(f"\nTUM TESTLER GECTI ({passed}/{passed})")

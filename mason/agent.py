@@ -108,9 +108,10 @@ def execute_actions(raw_json: str, config: dict | None = None):
         try:
             t = a.get("type")
             if t == "remember":
-                memory.remember(a["content"], a.get("category", "fact"),
-                                a.get("project"), config)
-                done.append(f"🧠 Hafızaya kaydedildi: {a['content'][:60]}")
+                rid = memory.remember(a["content"], a.get("category", "fact"),
+                                      a.get("project"), config)
+                if rid:  # 0 => kullanicinin bilerek sildigi bilgi, geri eklenmedi
+                    done.append(f"🧠 Hafızaya kaydedildi: {a['content'][:60]}")
             elif t == "forget":
                 if protect:
                     pending_forget.append(int(a["id"]))  # sifre ile onaylanacak
@@ -193,6 +194,15 @@ def chat(user_message: str, config: dict) -> dict:
         tasks=planner.format_tasks_for_prompt(),
         documents=doc_section,
     )
+    forgotten = memory.forgotten_list()
+    if forgotten:
+        system_prompt += (
+            "\n\nINTENTIONALLY DELETED BY THE USER — these facts were removed on "
+            "purpose. Do NOT state them as true, do NOT act on them, and NEVER "
+            "'remember' them again (even if they appear earlier in this "
+            "conversation). Treat them as no longer valid:\n"
+            + "\n".join(f"- {c}" for c in forgotten)
+        )
     if config.get("memory_password"):
         system_prompt += (
             "\n\nDELETION IS PASSWORD-PROTECTED (memories AND tasks). When the "

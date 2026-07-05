@@ -65,9 +65,16 @@ class GeminiProvider:
 
 
 class OllamaProvider:
-    def __init__(self, base_url: str = "http://localhost:11434", model: str = "llama3.2"):
+    def __init__(self, base_url: str = "http://localhost:11434",
+                 model: str = "llama3.2", num_ctx: int = 8192):
         self.base_url = base_url.rstrip("/")
         self.model = model
+        # ONEMLI: Ollama varsayilan baglam penceresi 2048 token'dir. MASON'un
+        # sistem promptu (hafiza + gorevler + belgeler + kurallar) bundan cok
+        # daha uzun oldugu icin, dusuk num_ctx promptun BASINI keser ve model
+        # talimatlari goremez -> "sapitir", dedigini anlamaz. Bunu buyuterek
+        # (varsayilan 8192) modelin tum baglami gormesini sagliyoruz.
+        self.num_ctx = int(num_ctx or 8192)
 
     def chat(self, system_prompt: str, messages: list[dict]) -> str:
         chat_messages = [{"role": "system", "content": system_prompt}] + [
@@ -82,7 +89,8 @@ class OllamaProvider:
                     "stream": False,
                     # model 10 dk bellekte kalsin -> ardisik sorular hizli olur
                     "keep_alive": "10m",
-                    "options": {"temperature": 0.7},
+                    # temperature dusuk -> talimatlara daha sadik, daha az "sapitma"
+                    "options": {"temperature": 0.4, "num_ctx": self.num_ctx},
                 },
                 timeout=300,
             )
@@ -166,10 +174,11 @@ class HybridProvider:
 def get_provider(config: dict):
     """Ayarlara gore dogru LLM saglayicisini dondurur."""
     provider = config.get("provider", "gemini")
+    num_ctx = int(config.get("ollama_num_ctx", 8192))
     if provider == "ollama":
-        return OllamaProvider(config["ollama_url"], config["ollama_model"])
+        return OllamaProvider(config["ollama_url"], config["ollama_model"], num_ctx)
     if provider == "hybrid":
         primary = GeminiProvider(config["gemini_api_key"], config["gemini_model"])
-        fallback = OllamaProvider(config["ollama_url"], config["ollama_model"])
+        fallback = OllamaProvider(config["ollama_url"], config["ollama_model"], num_ctx)
         return HybridProvider(primary, fallback, int(config.get("hybrid_cooldown_sec", 900)))
     return GeminiProvider(config["gemini_api_key"], config["gemini_model"])

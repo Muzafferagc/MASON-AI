@@ -21,9 +21,17 @@ TOP_K = 30
 
 
 def remember(content: str, category: str = "fact",
-             project: str | None = None, config: dict | None = None) -> int:
-    """Yeni bir bilgiyi hafizaya kaydeder. Ayni icerik varsa tekrar eklemez."""
+             project: str | None = None, config: dict | None = None,
+             force: bool = False) -> int:
+    """Yeni bir bilgiyi hafizaya kaydeder. Ayni icerik varsa tekrar eklemez.
+
+    Kullanici bu bilgiyi daha once SILDIYSE (forgotten listesinde) ve force=False
+    ise, Mason'un sohbet gecmisinden onu sessizce geri eklemesi ENGELLENIR
+    (id=0 doner). Geri istenirse yedekten import edilir (o zaman forgotten
+    kaydi temizlenir) ya da kullanici bilerek force ile ekler."""
     category = category if category in VALID_CATEGORIES else "fact"
+    if not force and is_forgotten(content):
+        return 0  # kullanicinin bilerek sildigi bilgi geri eklenmez
     embedding = embed_text(content, config) if config else None
     emb_json = json.dumps(embedding) if embedding else None
     with get_conn() as conn:
@@ -40,9 +48,40 @@ def remember(content: str, category: str = "fact",
         return cur.lastrowid
 
 
-def forget(memory_id: int) -> None:
-    """Bir hafiza kaydini siler (yanlis/eski bilgiler icin)."""
+def _tombstone(conn, content: str | None) -> None:
+    """Silinen bir bilginin icerigini 'forgotten' listesine ekler."""
+    if content:
+        conn.execute(
+            "INSERT OR IGNORE INTO forgotten (content) VALUES (?)", (content,)
+        )
+
+
+def is_forgotten(content: str) -> bool:
+    """Bu icerik daha once kullanici tarafindan silindi mi?"""
     with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM forgotten WHERE content = ?", (content,)
+        ).fetchone()
+    return row is not None
+
+
+def forgotten_list(limit: int = 40) -> list[str]:
+    """Silinmis (yeniden hatirlanmamasi gereken) bilgilerin icerigi."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT content FROM forgotten ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [r["content"] for r in rows]
+
+
+def forget(memory_id: int) -> None:
+    """Bir hafiza kaydini siler ve icerigini 'forgotten' listesine yazar ki
+    Mason onu sohbet gecmisinden yeniden hatirlayip geri eklemesin."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT content FROM memories WHERE id = ?", (memory_id,)
+        ).fetchone()
+        _tombstone(conn, row["content"] if row else None)
         conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
 
 
@@ -54,9 +93,12 @@ def all_memory_ids() -> list[int]:
 
 
 def forget_all() -> int:
-    """TUM hafizayi siler; silinen kayit sayisini dondurur.
+    """TUM hafizayi siler; silinen kayit sayisini dondurur. Silinen tum
+    icerikler 'forgotten' listesine yazilir (geri hatirlanmasin).
     Not: Sifre korumasi agent katmaninda uygulanir; burasi ham silmedir."""
     with get_conn() as conn:
+        for r in conn.execute("SELECT content FROM memories").fetchall():
+            _tombstone(conn, r["content"])
         cur = conn.execute("DELETE FROM memories")
         return cur.rowcount
 
@@ -85,7 +127,11 @@ def import_memories(items: list[dict], config: dict | None = None) -> int:
         if not content or content in existing:
             continue
         category = it.get("category") or "fact"
-        remember(content, category, it.get("project"), config)
+        # Yedekten geri yukleme kullanicinin ACIK istegidir: bu icerik daha once
+        # silinmis olsa bile 'forgotten' kaydini temizleyip force ile ekle.
+        with get_conn() as conn:
+            conn.execute("DELETE FROM forgotten WHERE content = ?", (content,))
+        remember(content, category, it.get("project"), config, force=True)
         existing.add(content)
         added += 1
     return added

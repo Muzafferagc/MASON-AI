@@ -89,3 +89,14 @@ def list_plans(limit: int = 20) -> list[dict]:
             "SELECT * FROM plans ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
     return rows_to_dicts(rows)
+
+
+def delete_plan(plan_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
+
+
+def all_plan_ids() -> list[int]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT id FROM plans ORDER BY id DESC").fetchall()
+    return [r["id"] for r in rows]

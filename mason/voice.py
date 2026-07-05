@@ -105,7 +105,26 @@ def transcribe(audio, config: dict) -> str:
         )
     lang = config.get("stt_language", "tr")
     lang = None if lang == "auto" else lang
-    segments, _info = _whisper_model.transcribe(audio, vad_filter=True, language=lang)
+    # Kelime secimini iyilestiren ayarlar:
+    #  - initial_prompt: modele baglam/dogru yazim ipucu verir ("Mason", Turkce)
+    #  - condition_on_previous_text=False: kisa komutlarda onceki metinden
+    #    "halusinasyon" tasimayi (yanlis kelime uydurmayi) onler
+    #  - beam_size=5 + temperature=0: en olasi cozumu secer, rastgeleligi keser
+    #  - no_speech_threshold: sessizligi yanlislikla metne cevirmeyi engeller
+    hint = config.get("stt_initial_prompt") or (
+        "MASON yapay zeka asistani ile Turkce konusma. Hey Mason."
+        if lang in (None, "tr") else None
+    )
+    segments, _info = _whisper_model.transcribe(
+        audio,
+        language=lang,
+        vad_filter=True,
+        beam_size=5,
+        temperature=0.0,
+        condition_on_previous_text=False,
+        no_speech_threshold=0.6,
+        initial_prompt=hint,
+    )
     return " ".join(s.text.strip() for s in segments).strip()
 
 

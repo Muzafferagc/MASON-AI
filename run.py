@@ -61,6 +61,49 @@ def _safe_name(name: str) -> str:
     return name[:120]
 
 
+# "Kendini kapat / uyku moduna gec" niyetini yakalayan ifadeler. Bu komut
+# uygulamayi TAMAMEN kapatmaz; X'e basilmis gibi pencereyi gizler ve Mason
+# arka planda "Hey Mason" demeni beklemeye devam eder. (Alt dizi eslesmesi
+# kullaniyoruz ki "uyku moduna", "gizlensene" gibi ekli halleri de yakalasin.)
+_SLEEP_PHRASES = (
+    "kendini kapat", "uyku mod", "uykuya ge", "gizlen",
+    "arka plana ge", "arka plana ge", "pencereyi kapat", "pencereyi gizle",
+    "ekrandan git", "ekrandan kaybol", "ekrandan çekil", "ekrandan cekil",
+    "görünmez ol", "gorunmez ol", "kendini gizle",
+)
+
+
+def _looks_like_sleep(text: str) -> bool:
+    t = (text or "").lower()
+    return any(p in t for p in _SLEEP_PHRASES)
+
+
+def _hide_to_tray() -> None:
+    """Pencereyi gizler (uygulama arka planda calismaya / dinlemeye devam eder)."""
+    try:
+        window.hide()
+    except Exception:
+        pass
+
+
+def _do_sleep(text: str) -> dict:
+    """'Kendini kapat' komutu: kisa bir onay ver, sonra pencereyi gizle."""
+    try:
+        agent.save_message("user", text)
+    except Exception:
+        pass
+    reply = ("Uyku moduna geçiyorum, efendim. Beni istediğin an "
+             "\"Hey Mason\" diyerek uyandırabilirsin.")
+    try:
+        agent.save_message("assistant", reply)
+    except Exception:
+        pass
+    # Cevabin ekranda gorunmesine/seslendirilmesine firsat ver, sonra gizle.
+    threading.Timer(2.2, _hide_to_tray).start()
+    return {"reply": reply, "actions_done": ["😴 Uyku modu — tepside dinliyorum"],
+            "error": False, "sleep": True}
+
+
 def _unique_path(path: Path) -> Path:
     """Ayni adli dosya varsa sonuna sayi ekleyerek benzersiz yol uretir."""
     if not path.exists():
@@ -84,6 +127,8 @@ class Api:
         text = (text or "").strip()
         if not text:
             return {"reply": "", "actions_done": [], "error": True}
+        if _looks_like_sleep(text):
+            return _do_sleep(text)
         return agent.chat(text, load_config())
 
     def get_history(self) -> list:
@@ -96,15 +141,15 @@ class Api:
         return {"ok": True}
 
     def apply_delete(self, mem_ids: list = None, task_ids: list = None,
-                     password: str = "") -> dict:
-        """Sifre korumali silmeyi onaylar (hafiza + gorev). UI, kullanicinin
+                     password: str = "", plan_ids: list = None) -> dict:
+        """Sifre korumali silmeyi onaylar (hafiza + gorev + plan). UI, kullanicinin
         girdigi sifreyle cagirir; sifre dogruysa verilen id'ler silinir.
         Sifre hic ayarlanmamissa bos sifreyle de calisir (manuel silme)."""
         cfg = load_config()
         real = cfg.get("memory_password", "")
         if real and (password or "") != real:
             return {"ok": False, "error": "Şifre yanlış"}
-        mem_count = task_count = 0
+        mem_count = task_count = plan_count = 0
         for i in (mem_ids or []):
             try:
                 memory.forget(int(i))
@@ -117,8 +162,15 @@ class Api:
                 task_count += 1
             except Exception:
                 continue
+        for i in (plan_ids or []):
+            try:
+                planner.delete_plan(int(i))
+                plan_count += 1
+            except Exception:
+                continue
         return {"ok": True, "mem_count": mem_count, "task_count": task_count,
-                "count": mem_count + task_count}
+                "plan_count": plan_count,
+                "count": mem_count + task_count + plan_count}
 
     def apply_forget(self, ids: list, password: str = "") -> dict:
         """Eski arayuz uyumu: sadece hafiza siler."""
@@ -174,6 +226,56 @@ class Api:
             items = json.loads(newest.read_text(encoding="utf-8"))
             added = memory.import_memories(items, load_config())
             return {"ok": True, "count": added, "file": newest.name}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def list_backups(self) -> list:
+        """'yedekler/' klasorundeki tum yedek dosyalarini (en yeni once)
+        tarih, boyut ve icindeki kayit sayisiyla listeler (YEDEKLER sekmesi)."""
+        out = []
+        if not BACKUP_DIR.exists():
+            return out
+        for p in sorted(BACKUP_DIR.glob("hafiza_yedek_*.json"), reverse=True):
+            try:
+                stt = p.stat()
+                try:
+                    n = len(json.loads(p.read_text(encoding="utf-8")))
+                except Exception:
+                    n = None
+                out.append({
+                    "file": p.name,
+                    "count": n,
+                    "size_bytes": stt.st_size,
+                    "created_at": time.strftime(
+                        "%Y-%m-%d %H:%M", time.localtime(stt.st_mtime)),
+                })
+            except Exception:
+                continue
+        return out
+
+    def restore_backup(self, file: str) -> dict:
+        """Belirli bir yedek dosyasindan hafizayi geri yukler."""
+        try:
+            p = BACKUP_DIR / Path(file or "").name
+            if not p.exists():
+                return {"ok": False, "error": "Yedek dosyası bulunamadı"}
+            items = json.loads(p.read_text(encoding="utf-8"))
+            added = memory.import_memories(items, load_config())
+            return {"ok": True, "count": added, "file": p.name}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def delete_backup(self, file: str, password: str = "") -> dict:
+        """Bir yedek dosyasini siler. Silme sifresi ayarliysa dogru sifre gerekir."""
+        cfg = load_config()
+        real = cfg.get("memory_password", "")
+        if real and (password or "") != real:
+            return {"ok": False, "error": "Şifre yanlış"}
+        try:
+            p = BACKUP_DIR / Path(file or "").name
+            if p.exists():
+                p.unlink()
+            return {"ok": True}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -387,9 +489,22 @@ def _acquire_single_instance() -> bool:
 # ---------- Faz 3: "Hey Mason" ----------
 
 def _show_window() -> None:
+    """Pencereyi gizliyse gosterir VE mutlaka ekranin onune getirir.
+    Sadece window.show() bazen pencereyi baska pencerelerin ARKASINDA gosterir
+    (gorev cubugunda yanar ama one gelmez). on_top'u bir an acip kapatmak
+    Windows'ta pencereyi zorla en one tasir, sonra normal z-sirasina birakir."""
     try:
         window.show()
-        window.maximize()  # tam ekran yap (zaten buyukse islem yapmaz -> titremez)
+        try:
+            window.restore()   # simge durumundaysa (minimized) geri ac
+        except Exception:
+            pass
+        window.maximize()      # tam ekran (zaten buyukse titremez)
+        try:
+            window.on_top = True   # bir an en uste zorla -> ekrana gelir
+            window.on_top = False  # sonra normal davranisa don
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -433,7 +548,10 @@ def _on_command(text: str) -> None:
     """Sesli komut algilandi: chat'e isle, cevabi UI'a ve hoparlore gonder."""
     _show_window()
     _js(f"voiceUser({json.dumps(text)})")
-    result = agent.chat(text, load_config())
+    if _looks_like_sleep(text):
+        result = _do_sleep(text)  # "kendini kapat" -> onay ver, sonra gizlen
+    else:
+        result = agent.chat(text, load_config())
     _js(f"voiceReply({json.dumps(result['reply'])}, "
         f"{json.dumps(result['actions_done'])}, {json.dumps(result['error'])}, "
         f"{json.dumps(result.get('pending_forget', []))}, "

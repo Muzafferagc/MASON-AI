@@ -67,6 +67,15 @@ CREATE TABLE IF NOT EXISTS doc_chunks (
     created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_doc_chunks_doc ON doc_chunks(doc_id);
+
+-- Silinen bilgiler (mezar tasi): kullanici bir hafizayi silince icerigi burada
+-- tutulur ki Mason onu sohbet gecmisinden yeniden hatirlayip geri EKLEMESIN.
+-- Kullanici yedekten geri yuklerse (import) ilgili kayit buradan cikarilir.
+CREATE TABLE IF NOT EXISTS forgotten (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    content    TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
 """
 
 

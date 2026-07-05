@@ -12,6 +12,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Sürümleme / Version
 
 ## [Unreleased] — Yayınlanmadı
 
+### Düzeltildi (kullanıcı geri bildirimleri)
+- **"Hey Mason" deyince pencere öne gelmiyordu:** Sadece açılıp görev çubuğunda kalıyordu. `_show_window` artık `restore()` + `on_top` bir an açılıp kapanarak pencereyi zorla ekranın en önüne getiriyor (Windows'ta güvenilir öne getirme).
+- **Ollama'da "sapıtma" / dediğini anlamama:** Asıl neden Ollama'nın varsayılan **bağlam penceresinin (num_ctx) 2048** olmasıydı — MASON'un uzun sistem promptu (hafıza + görevler + belgeler + kurallar) bunu aşınca promptun başı kesiliyor ve model talimatları göremiyordu. Artık `num_ctx: 8192` (ayarlanabilir) ve `temperature: 0.4` (talimata daha sadık). Bu, yerel modelle tutarlılığı belirgin artırır.
+- **Ses tanıma kelimeleri iyi seçemiyordu:** Whisper artık `initial_prompt` (Türkçe + "Mason" bağlamı), `condition_on_previous_text=False` (kısa komutlarda halüsinasyonu önler), `beam_size=5`, `temperature=0` ve `no_speech_threshold` ile daha isabetli.
+- **Silinen hafıza geri hatırlanıyordu:** Yeni **"forgotten" (mezar taşı) sistemi** — bir hafızayı sildiğinde içeriği kayda geçer; Mason sohbet geçmişinden onu **asla geri ekleyemez** (`remember` engellenir, id=0) ve sistem promptunda "bunları tekrar hatırlama" olarak işaretlenir. Yedekten geri yüklersen (import) bu işaret temizlenir ve bilgi geri gelir. Yani: sildiğin ve geri yüklemediğin bilgi gerçekten unutulur.
+
+### Eklendi (kullanıcı istekleri)
+- **Planları silme:** Planlar sekmesinde her planın yanında 🗑 butonu (hafıza/görev gibi; şifre koruması aktifse onay penceresinden geçer). Yeni `planner.delete_plan`, `apply_delete`'e `plan_ids` eklendi.
+- **YEDEKLER sekmesi (save files):** Dock'ta yeni sekme; `yedekler/` klasöründeki tüm yedek dosyaları tarih, boyut ve kayıt sayısıyla listelenir. Her yedekte **↺ GERİ YÜKLE** ve 🗑 sil butonu (`api.list_backups` / `restore_backup` / `delete_backup`).
+- **"Kendini kapat" → uyku modu:** Sesli veya yazılı "kendini kapat / uyku moduna geç / gizlen / arka plana geç / ekrandan git" dediğinde Mason kısa bir onay verip **X'e basılmış gibi pencereyi gizler** ve tepside "Hey Mason" demeni beklemeye devam eder (tamamen kapanmaz).
+
 ### Eklendi (Faz 4 — Dosya yükleme + Belge hafızası / RAG)
 - **Her türden dosya yükleme (ChatGPT/Gemini gibi):** Dock'a 📎 butonu ve tüm ekranı kaplayan **sürükle-bırak** katmanı eklendi. Desteklenen türler: PDF, Word (.docx), Excel (.xlsx/.csv), metin & kod (.txt/.md/.py/.js…), **görsel** (.png/.jpg…) ve **ses** (.mp3/.wav…). Desteklenmeyen tür/eksik kütüphane sessizce atlanır, uygulama asla çökmez.
 - **İçerik çıkarma:** PDF → `pypdf`, Word → `python-docx`, Excel → `openpyxl`, metin/kod/CSV → doğrudan (kodlama tahminiyle), **görsel → Gemini "görü" (vision/OCR)**, **ses → faster-whisper** (Faz 2 altyapısı). Hiçbiri için zorunlu kurulum yok; kurulu olmayan tür için bilgilendirici mesaj döner.

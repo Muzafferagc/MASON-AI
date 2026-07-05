@@ -36,6 +36,11 @@ CREATE TABLE IF NOT EXISTS conversations (
 );
 
 -- Konusma gecmisi: chat kalicidir (her mesaj bir sohbete baglidir)
+-- NOT: messages icin index BURADA OLUSTURULMAZ. Cunku eski veritabanlarinda
+-- 'messages' tablosu ZATEN VAR ama conversation_id sutunu YOK; bu index'i
+-- executescript icinde olusturmaya calismak (migrasyon sutunu eklemeden ONCE
+-- calistigi icin) "no such column: conversation_id" hatasi verir. Index,
+-- sutun kesin var oldugu icin _migrate() sonunda olusturulur.
 CREATE TABLE IF NOT EXISTS messages (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     conversation_id INTEGER,                -- bagli oldugu sohbet
@@ -43,7 +48,6 @@ CREATE TABLE IF NOT EXISTS messages (
     content         TEXT NOT NULL,
     created_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
-CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
 
 -- Kaydedilen planlar (gunluk/haftalik/aylik)
 CREATE TABLE IF NOT EXISTS plans (
@@ -135,6 +139,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 "WHERE conversation_id IS NULL",
                 (cur.lastrowid,),
             )
+        conn.commit()  # DDL + tasima kesin kaydedilsin (Python surumu ne olursa olsun)
+
+    # Index'i SUTUN KESIN VAR OLDUKTAN SONRA olustur (eski DB'lerde executescript
+    # icinde olusturmaya calismak cokerdi). IF NOT EXISTS oldugu icin guvenli.
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id)"
+    )
+    conn.commit()
 
 
 def rows_to_dicts(rows) -> list[dict]:

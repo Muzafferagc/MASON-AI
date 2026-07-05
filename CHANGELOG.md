@@ -12,6 +12,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Sürümleme / Version
 
 ## [Unreleased] — Yayınlanmadı
 
+### Düzeltildi (KRİTİK — "no such column: conversation_id")
+- **Mevcut veritabanında her mesaj/yeni sohbet hata veriyordu:** Sohbet geçmişi için eklenen `CREATE INDEX ... ON messages(conversation_id)` satırı SCHEMA içindeydi ve `executescript` sırasında **migrasyon sütunu eklemeden ÖNCE** çalışıyordu. Eski `mason.db`'de `messages` tablosu var ama `conversation_id` sütunu henüz olmadığından index oluşturma her `get_conn` çağrısında çöküyor, migrasyon hiç çalışamıyor, sütun hiç eklenemiyordu → mesaj gönderme, yeni sohbet, hafıza, görev dahil DB'ye dokunan her şey "no such column: conversation_id" veriyordu. **Çözüm:** index artık SCHEMA'dan çıkarıldı; `_migrate()` içinde, sütun kesin eklendikten sonra oluşturuluyor (ayrıca `commit()` ile Python 3.12+/3.14 sqlite davranışına karşı kesinleştirildi). Eski veritabanı sorunsuz göç ediyor; eski mesajlar "Önceki sohbet" olarak korunuyor.
+
 ### Düzeltildi (dayanıklılık — sesli komut takılması)
 - **Ollama'da sesli komut "İŞLİYORUM"da takılıp kalıyordu:** İki kök neden vardı. (1) Birçok arka plan thread'i (sohbet + hatırlatıcı + brifing + embedding) aynı anda veritabanına eriştiğinde SQLite "database is locked" hatası verip sesli komut yolunu çökertiyordu → artık **WAL modu + busy_timeout** ile eşzamanlı erişim güvenli. (2) Sesli komut yolunda (`_on_command`) hata yakalama yoktu; bir istisna olunca arayüz kilitleniyordu → artık `agent.chat` **asla istisna fırlatmıyor** (her durumda anlaşılır bir yanıt/hatayla dönüyor) ve `_on_command` her durumda `voiceReply` çağırıp arayüzü serbest bırakıyor. Kısacası Ollama yavaş/hatalı olsa bile ekran artık takılmıyor.
 

@@ -489,22 +489,30 @@ def _acquire_single_instance() -> bool:
 # ---------- Faz 3: "Hey Mason" ----------
 
 def _show_window() -> None:
-    """Pencereyi gizliyse gosterir VE mutlaka ekranin onune getirir.
-    Sadece window.show() bazen pencereyi baska pencerelerin ARKASINDA gosterir
-    (gorev cubugunda yanar ama one gelmez). on_top'u bir an acip kapatmak
-    Windows'ta pencereyi zorla en one tasir, sonra normal z-sirasina birakir."""
+    """Pencereyi gizliyse gosterir ve one getirmeye calisir.
+
+    ONEMLI: Bu fonksiyon wake-dinleyici ARKA PLAN thread'inden cagriliyor.
+    pywebview'de show()/restore()/maximize() thread-guvenlidir (GUI thread'ine
+    marshal edilir). ANCAK 'window.on_top = True' ozelligini arka thread'den
+    degistirmek Windows/EdgeChromium'da yakalanamayan bir NATIVE cokmeye
+    (uygulama sessizce kapanir) yol acar -> bu yuzden ON_TOP KULLANMIYORUZ.
+    Bunun yerine one getirmeyi guvenli evaluate_js(window.focus()) ile deniyoruz."""
     try:
         window.show()
-        try:
-            window.restore()   # simge durumundaysa (minimized) geri ac
-        except Exception:
-            pass
-        window.maximize()      # tam ekran (zaten buyukse titremez)
-        try:
-            window.on_top = True   # bir an en uste zorla -> ekrana gelir
-            window.on_top = False  # sonra normal davranisa don
-        except Exception:
-            pass
+    except Exception:
+        pass
+    try:
+        window.restore()   # simge durumundaysa (minimized) geri ac (thread-guvenli)
+    except Exception:
+        pass
+    try:
+        window.maximize()  # tam ekran (zaten buyukse titremez)
+    except Exception:
+        pass
+    # One getirme denemesi: evaluate_js GUI thread'ine marshal edildigi icin
+    # guvenlidir; native cross-thread GUI cagrisi yapmaz.
+    try:
+        window.evaluate_js("window.focus()")
     except Exception:
         pass
 

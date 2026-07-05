@@ -12,6 +12,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Sürümleme / Version
 
 ## [Unreleased] — Yayınlanmadı
 
+### Kaldırıldı
+- **`GITHUB_REHBERI.md` git deposundan çıkarıldı:** Kişisel kurulum rehberi artık GitHub'da paylaşılmıyor; yerelde tutuluyor ve tüm commit geçmişinden temizlendi. `.gitignore`'a eklendi.
+
 ### Düzeltildi
 - **Hafıza silme çalışmıyordu:** "hafızayı sil" dendiğinde MASON sadece "onay bekliyorum" diyor ama hiçbir şey silmiyordu. LLM bir silme aksiyonu üretmediği için `pending_forget` boş kalıyor, şifre penceresi hiç açılmıyordu. Artık tüm hafızayı silmek için `clear_memory` aksiyonu var; şifre penceresi açılıp doğru şifre girilince silme gerçekleşiyor.
 

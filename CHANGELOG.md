@@ -12,7 +12,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Sürümleme / Version
 
 ## [Unreleased] — Yayınlanmadı
 
-_Bir sonraki değişiklikler buraya eklenecek. Yeni bir sürüm hazır olduğunda tarih ve numara verilir._
+### Düzeltildi
+- **Hafıza silme çalışmıyordu:** "hafızayı sil" dendiğinde MASON sadece "onay bekliyorum" diyor ama hiçbir şey silmiyordu. LLM bir silme aksiyonu üretmediği için `pending_forget` boş kalıyor, şifre penceresi hiç açılmıyordu. Artık tüm hafızayı silmek için `clear_memory` aksiyonu var; şifre penceresi açılıp doğru şifre girilince silme gerçekleşiyor.
+
+### Eklendi
+- `clear_memory` aksiyonu ve `memory.forget_all()` / `memory.all_memory_ids()` yardımcıları — tüm hafızayı şifre korumalı akıştan geçirerek toplu silme.
+- Sistem promptu güncellendi: silme talebinde LLM artık `forget`/`clear_memory` aksiyonunu üretmek ZORUNDA; şifreyi uygulama sorar, kullanıcıdan sohbete şifre yazması istenmez.
+- **Hafıza yedekleme:** `memory.export_memories()` / `import_memories()` + Ayarlar'da Dışa Aktar / İçe Aktar butonları. Hafıza `yedekler/` klasörüne tarihli JSON olarak yazılır; en yeni yedekten geri yüklenir (aynı içerik atlanır).
+- **Hatırlatıcılar:** `mason/reminders.py` (yaklaşan/geciken görev mantığı) + arka planda periyodik kontrol; sistem tepsisi bildirimi ve arayüz uyarısı.
+- **MIT LICENSE** ve **GitHub Actions CI** (her push'ta `tests/test_core.py`, Python 3.10–3.12).
+- Yedekleme ve hatırlatıcılar için birim testleri; commit düzeni Conventional Commits'e geçirildi (README'de belgelendi).
 
 ---
 

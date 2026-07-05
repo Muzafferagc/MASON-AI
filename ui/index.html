@@ -376,6 +376,13 @@
     <input id="s-mempass" type="password" placeholder="Boş bırak = koruma kapalı">
     <div class="hint">Bir şifre yazarsan, hafıza silme işlemleri bu şifreyi ister. (Yalnızca bu bilgisayarda saklanır.)</div>
 
+    <label>HAFIZA YEDEKLEME</label>
+    <div class="row">
+      <button class="btn ghost" id="s-export" type="button">DIŞA AKTAR (YEDEKLE)</button>
+      <button class="btn ghost" id="s-import" type="button">İÇE AKTAR (GERİ YÜKLE)</button>
+    </div>
+    <div class="hint" id="backup-status">Hafızanı JSON olarak <b>yedekler/</b> klasörüne kaydeder; en yeni yedekten geri yükler (aynı bilgiler atlanır).</div>
+
     <label class="check-row"><input type="checkbox" id="s-wake"> "Hey Mason" ile uyanma</label>
     <label class="check-row"><input type="checkbox" id="s-clap"> Çift alkış ile uyanma</label>
     <label class="check-row"><input type="checkbox" id="s-hidden"> Gizli başla (tepside bekle)</label>
@@ -687,6 +694,9 @@ $("clear-btn").onclick = async () => {
   addMessage("assistant", "Ekran temizlendi. Kaldığımız yerden devam, Muzaffer — hiçbir şeyi unutmadım.", false, true);
 };
 
+/* ============ HATIRLATICI ============ */
+window.masonReminder = (text) => { if (text) addActionsNote(["⏰ " + text]); };
+
 /* ============ HAFIZA SILME SIFRESI ============ */
 let _pendingForget = [];
 function checkPendingForget(res) {
@@ -839,6 +849,19 @@ $("s-save").onclick = async () => {
   applyTheme($("s-theme").value);
   $("modal-bg").classList.remove("show");
   blip(980, .08);
+};
+$("s-export").onclick = async () => {
+  const r = await window.pywebview.api.export_memory();
+  $("backup-status").innerHTML = r.ok
+    ? "✅ " + r.count + " hafıza yedeklendi → yedekler/" + r.file
+    : "⚠️ " + (r.error || "yedekleme başarısız");
+};
+$("s-import").onclick = async () => {
+  const r = await window.pywebview.api.import_memory();
+  $("backup-status").innerHTML = r.ok
+    ? "✅ " + r.count + " hafıza geri yüklendi (" + r.file + ")"
+    : "⚠️ " + (r.error || "geri yükleme başarısız");
+  if (r.ok) await refreshState();
 };
 
 /* ============ BOOT DIZISI ============ */

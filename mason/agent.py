@@ -37,6 +37,7 @@ You can persist information by including ONE fenced code block labelled json:act
 {{"actions": [
   {{"type": "remember", "content": "short fact to never forget", "category": "project|goal|preference|fact", "project": "optional project name"}},
   {{"type": "forget", "id": 12}},
+  {{"type": "clear_memory"}},
   {{"type": "add_task", "title": "...", "project": "optional", "priority": 1, "due_date": "YYYY-MM-DD", "notes": "optional"}},
   {{"type": "update_task", "id": 3, "priority": 2, "due_date": "YYYY-MM-DD", "status": "open|done", "title": "...", "notes": "..."}},
   {{"type": "complete_task", "id": 3}},
@@ -107,6 +108,16 @@ def execute_actions(raw_json: str, config: dict | None = None):
                 else:
                     memory.forget(int(a["id"]))
                     done.append(f"🗑️ Hafıza #{a['id']} silindi")
+            elif t == "clear_memory":
+                ids = memory.all_memory_ids()
+                if not ids:
+                    done.append("🧠 Silinecek hafıza yok")
+                elif protect:
+                    pending_forget.extend(ids)  # sifre ile onaylanacak (hepsi)
+                else:
+                    for i in ids:
+                        memory.forget(i)
+                    done.append(f"🗑️ Tüm hafıza silindi ({len(ids)} kayıt)")
             elif t == "add_task":
                 tid = planner.add_task(
                     a["title"], a.get("project"), a.get("priority", 3),
@@ -155,11 +166,15 @@ def chat(user_message: str, config: dict) -> dict:
     )
     if config.get("memory_password"):
         system_prompt += (
-            "\n\nMEMORY DELETION IS PASSWORD-PROTECTED: when the user asks to "
-            "delete or clear memory, the app will require them to enter a "
-            "password before anything is deleted. Do NOT say the memory was "
-            "erased; instead say you will delete it as soon as they confirm "
-            "with their password.")
+            "\n\nMEMORY DELETION IS PASSWORD-PROTECTED. When the user asks to "
+            "delete memory, you MUST STILL emit the deletion action so the app "
+            "can pop up the password dialog: use \"clear_memory\" to wipe ALL "
+            "memory, or \"forget\" with the specific #id(s) to remove certain "
+            "facts. The app intercepts these actions and asks for the password "
+            "itself — you never handle the password. In your visible reply do "
+            "NOT say the memory was erased and do NOT ask the user to type their "
+            "password in the chat; simply say a confirmation dialog will appear. "
+            "Emitting the action is REQUIRED — without it nothing gets deleted.")
     history = get_history(HISTORY_LIMIT)
     llm_messages = [{"role": h["role"], "content": h["content"]} for h in history]
 

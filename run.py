@@ -14,12 +14,13 @@ from pathlib import Path
 
 import webview
 
-from mason import agent, memory, planner, voice, wakeword
+from mason import agent, memory, planner, reminders, voice, wakeword
 from mason.config import load_config, save_config
 from mason.database import get_conn
 
 BASE_DIR = Path(__file__).resolve().parent
 UI_FILE = BASE_DIR / "ui" / "index.html"
+BACKUP_DIR = BASE_DIR / "yedekler"       # hafiza yedeklerinin (JSON) tutuldugu klasor
 SHOW_FLAG = BASE_DIR / ".show.trigger"   # arka plandaki ornegi one getirme sinyali
 LOCK_PORT = 50573                         # tek ornek kilidi (localhost)
 
@@ -86,6 +87,45 @@ class Api:
             except Exception:
                 continue
         return {"ok": True, "count": count}
+
+    # ---- Hafiza yedekleme ----
+    def export_memory(self) -> dict:
+        """Tum hafizayi 'yedekler/' klasorune tarihli bir JSON dosyasi olarak yazar."""
+        try:
+            items = memory.export_memories()
+            BACKUP_DIR.mkdir(exist_ok=True)
+            fname = f"hafiza_yedek_{time.strftime('%Y%m%d_%H%M%S')}.json"
+            path = BACKUP_DIR / fname
+            path.write_text(
+                json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            return {"ok": True, "count": len(items), "file": fname}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def import_memory(self) -> dict:
+        """'yedekler/' klasorundeki EN YENI yedek dosyasindan hafizalari geri yukler.
+        Ayni icerik zaten varsa atlanir."""
+        try:
+            if not BACKUP_DIR.exists():
+                return {"ok": False, "error": "Yedek klasörü yok"}
+            backups = sorted(BACKUP_DIR.glob("hafiza_yedek_*.json"))
+            if not backups:
+                return {"ok": False, "error": "Yedek dosyası bulunamadı"}
+            newest = backups[-1]
+            items = json.loads(newest.read_text(encoding="utf-8"))
+            added = memory.import_memories(items, load_config())
+            return {"ok": True, "count": added, "file": newest.name}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ---- Hatirlaticilar ----
+    def due_reminders(self) -> dict:
+        """Yaklasan/geciken gorevler icin kisa hatirlatma metni (yoksa bos)."""
+        try:
+            return {"text": reminders.format_reminder() or ""}
+        except Exception:
+            return {"text": ""}
 
     # ---- Yan panel verileri ----
     def get_state(self) -> dict:
@@ -319,6 +359,40 @@ def _backfill_embeddings_in_background():
         pass
 
 
+def _notify(title: str, message: str) -> None:
+    """Hatirlatmayi hem sistem tepsisi bildiriminde hem de arayuzde gosterir."""
+    try:
+        if tray_icon is not None:
+            tray_icon.notify(message, title)
+    except Exception:
+        pass
+    _js(f"masonReminder({json.dumps(message)})")
+
+
+REMINDER_INTERVAL = 30 * 60  # 30 dakikada bir kontrol
+
+
+def _reminder_loop() -> None:
+    """Arka planda yaklasan/geciken gorevleri periyodik kontrol eder ve
+    her gorev icin gunde en fazla bir kez hatirlatir."""
+    time.sleep(8)  # acilisin oturmasini bekle
+    notified_today: set[str] = set()
+    last_day = time.strftime("%Y-%m-%d")
+    while True:
+        try:
+            today = time.strftime("%Y-%m-%d")
+            if today != last_day:      # yeni gun -> hatirlatmalari sifirla
+                notified_today.clear()
+                last_day = today
+            text = reminders.format_reminder()
+            if text and text not in notified_today:
+                _notify("MASON — Hatırlatıcı", text)
+                notified_today.add(text)
+        except Exception:
+            pass
+        time.sleep(REMINDER_INTERVAL)
+
+
 def _on_started():
     """Pencere acildiktan sonra arka plan servislerini baslat."""
     try:
@@ -327,6 +401,7 @@ def _on_started():
         pass
     threading.Thread(target=_backfill_embeddings_in_background, daemon=True).start()
     threading.Thread(target=_watch_show_trigger, daemon=True).start()
+    threading.Thread(target=_reminder_loop, daemon=True).start()
     _start_tray()
     _start_wake_listener()
     # --show verilmediyse ve ayar gizli baslat ise: tepsiye gizlen (dinlemeye devam)

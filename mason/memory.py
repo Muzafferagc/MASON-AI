@@ -46,6 +46,51 @@ def forget(memory_id: int) -> None:
         conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
 
 
+def all_memory_ids() -> list[int]:
+    """Tum hafiza id'lerini dondurur (toplu silme / sifre onayi icin)."""
+    with get_conn() as conn:
+        rows = conn.execute("SELECT id FROM memories ORDER BY id DESC").fetchall()
+    return [r["id"] for r in rows]
+
+
+def forget_all() -> int:
+    """TUM hafizayi siler; silinen kayit sayisini dondurur.
+    Not: Sifre korumasi agent katmaninda uygulanir; burasi ham silmedir."""
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM memories")
+        return cur.rowcount
+
+
+def export_memories() -> list[dict]:
+    """Tum hafizayi yedeklenebilir (JSON'a uygun) sozluk listesi olarak verir.
+    Embedding'ler yedege dahil edilmez; geri yuklemede yeniden uretilir."""
+    items = []
+    for m in all_memories(limit=1000000):
+        items.append({
+            "content": m["content"],
+            "category": m.get("category", "fact"),
+            "project": m.get("project"),
+            "created_at": m.get("created_at"),
+        })
+    return items
+
+
+def import_memories(items: list[dict], config: dict | None = None) -> int:
+    """Yedekten hafizalari geri yukler. Ayni icerik zaten varsa atlanir.
+    Yeni EKLENEN kayit sayisini dondurur."""
+    existing = {m["content"] for m in all_memories(limit=1000000)}
+    added = 0
+    for it in items or []:
+        content = (it.get("content") or "").strip()
+        if not content or content in existing:
+            continue
+        category = it.get("category") or "fact"
+        remember(content, category, it.get("project"), config)
+        existing.add(content)
+        added += 1
+    return added
+
+
 def all_memories(limit: int = 500) -> list[dict]:
     """Tum hafizalari getirir (en yeniler once)."""
     with get_conn() as conn:

@@ -12,6 +12,8 @@ Persistent memory · Planning · Voice chat · "Hey Mason" wake word · Cinemati
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white)
 ![LLM](https://img.shields.io/badge/LLM-Gemini%20%7C%20Ollama-8E75FF)
 ![Status](https://img.shields.io/badge/Sürüm-V2-3ce7ff)
+![Tests](https://github.com/Muzafferagc/MASON-AI/actions/workflows/tests.yml/badge.svg)
+![License](https://img.shields.io/badge/License-MIT-green)
 
 **[🇹🇷 Türkçe](#-türkçe)** · **[🇬🇧 English](#-english)**
 
@@ -37,12 +39,42 @@ MASON, Iron Man'deki Jarvis'ten ilham alan, tamamen **ücretsiz** çalışabilen
 - **Sesli konuşma** — Mikrofonla konuş (Whisper ile yazıya çevirir), Mason doğal bir Türkçe sesle (Ahmet) cevap verir.
 - **"Hey Mason" uyandırma** — Arka planda dinler; adını duyunca öne gelir. Konuşurken bile "Hey Mason" dersen susup seni dinler (barge-in).
 - **Sinematik HUD arayüz** — Sade, şık, filmvari tasarım; sese göre parlayan MASON wordmark'ı ve seçilebilir renk paletleri.
-- **Şifre korumalı hafıza silme** — İstersen hafıza silme işlemleri şifre ister.
+- **Şifre korumalı hafıza silme** — İstersen hafıza silme işlemleri şifre ister; onay penceresi açılır.
+- **Hafıza yedekleme** — Tüm hafızanı tek tıkla JSON olarak dışa aktar, gerektiğinde geri yükle (aynı bilgiler atlanır).
+- **Hatırlatıcılar** — Görevlerin son tarihi geldiğinde/geçtiğinde arka planda seni uyarır (sistem tepsisi + arayüz bildirimi).
 - **Ücretsiz** — Gemini API ücretsiz kotası ya da tamamen yerel Ollama.
 
 ### 🧰 Teknoloji
 
-Python · [pywebview](https://pywebview.flowrl.com/) (masaüstü pencere) · SQLite · Google Gemini / Ollama · [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (ses→yazı) · [edge-tts](https://github.com/rany2/edge-tts) (yazı→ses) · HTML/CSS/JS (Jarvis HUD)
+Saf Python + web arayüz; ağır bir çatı (framework) yok. Her parça, kurulmazsa uygulamayı çökertmeyecek şekilde *opsiyonel* tutuldu.
+
+| Katman | Kullanılan | Ne işe yarıyor |
+|--------|-----------|----------------|
+| Masaüstü kabuk | [pywebview](https://pywebview.flowrl.com/) | HTML arayüzünü native pencerede gösterir, Python↔JS köprüsü kurar |
+| Arayüz | HTML + CSS + Vanilla JS | Sinematik Jarvis HUD; kütüphane bağımlılığı yok |
+| Veri | SQLite (`sqlite3`) | Hafıza, görev, plan ve sohbet kalıcı olarak yerelde tutulur |
+| Beyin (LLM) | Google Gemini / [Ollama](https://ollama.com) | Cevap üretir; sağlayıcı-bağımsız arayüz (`llm.py`) |
+| Anlamsal arama | Gemini/Ollama embedding + kosinüs benzerliği | Hafıza büyüyünce en ilgili bilgileri seçer (RAG) |
+| Kulak (STT) | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) + [sounddevice](https://python-sounddevice.readthedocs.io/) | Mikrofonu dinler, konuşmayı yazıya çevirir (yerel/ücretsiz) |
+| Ağız (TTS) | [edge-tts](https://github.com/rany2/edge-tts) | Cevabı doğal Türkçe sesle okur |
+| Uyandırma | faster-whisper (tiny) + enerji/tepe analizi | "Hey Mason" ve çift alkış algılama, barge-in |
+| Tepsi & otomatik başlatma | [pystray](https://github.com/moses-palmer/pystray) + [Pillow](https://python-pillow.org/) | Arka planda çalışma, bildirimler, Windows açılışına ekleme |
+
+### 🧠 Nasıl çalışıyor? (mimari)
+
+MASON'ın kalbi basit ama güçlü bir **aksiyon protokolü**dür — sağlayıcıdan bağımsız bir "tool calling":
+
+1. Mesajın gelince `agent.py`, kalıcı hafızanı, açık görevlerini ve tarihi tek bir sistem promptuna gömer.
+2. LLM normal bir cevap yazar; gerekiyorsa cevabın içine gizli bir <code>```json:actions```</code> bloğu ekler (hafızaya kaydet, görev aç, plan kaydet, hafıza sil…).
+3. Mason bu bloğu ayıklayıp çalıştırır, kullanıcıya göstermez; kalan doğal cevabı ekrana/hoparlöre verir.
+
+Öne çıkan tasarım kararları:
+
+- **Hafıza ağacı** — Her bilgi bir kategori (`project/goal/preference/fact`) ve bir projeyle saklanır; ilgili bilgiler aynı "dala" bağlanır.
+- **RAG / anlamsal arama** — Hafıza 40 kaydı geçince, sorunun embedding'i ile en yakın anlamlı kayıtlar seçilir; embedding alınamazsa sessizce en yeni kayıtlara döner (asla çökmez).
+- **Barge-in** — Mason konuşurken "Hey Mason" dersen, kendi sesinin ekosunu ayırt edip sözünü keser ve seni dinler.
+- **Şifre korumalı silme** — Silme talebi doğrudan yürütülmez; onay penceresi açılır, doğru şifre girilince `apply_forget` çalışır.
+- **Dayanıklılık** — Ses/tepsi paketleri opsiyoneldir; kurulmazsa ilgili özellik kapanır, uygulama yine açılır.
 
 ### 🚀 Kurulum (Windows)
 
@@ -99,11 +131,14 @@ mason/llm.py         → Gemini / Ollama sağlayıcıları
 mason/embeddings.py  → anlamsal hafıza araması
 mason/voice.py       → mikrofon + Whisper + sesli yanıt
 mason/wakeword.py    → "Hey Mason" algılama + barge-in
+mason/reminders.py   → yaklaşan/geciken görev hatırlatıcı mantığı
 mason/agent.py       → Mason'un beyni: prompt + aksiyon protokolü
 ui/index.html        → sinematik HUD arayüz (V2)
 tests/test_core.py   → testler
+yedekler/            → hafıza yedekleri (JSON) — dışa aktarınca oluşur
+.github/workflows/   → her push'ta testleri çalıştıran CI
 ```
-> Verilerin `mason.db` dosyasında saklanır — **bu dosyayı silme!**
+> Verilerin `mason.db` dosyasında saklanır — **bu dosyayı silme!** Güvenlik için ⚙ Ayarlar → Hafıza Yedekleme'den ara ara yedek al.
 
 ### 🔧 Sorun giderme
 
@@ -124,8 +159,24 @@ tests/test_core.py   → testler
 - [x] Faz 2: Sesli konuşma (Whisper + TTS)
 - [x] Faz 3: "Hey Mason" + otomatik başlatma
 - [x] V2: Sinematik HUD, barge-in, temalar, şifreli hafıza
+- [x] V2.1: Hafıza yedekleme (JSON) + görev hatırlatıcıları + CI
 - [ ] Ollama sağlayıcısını tam çalışır hale getirme
-- [ ] Kesintisiz konuşma modu, hatırlatıcılar/bildirimler
+- [ ] Kesintisiz konuşma modu, takvim/bildirim entegrasyonu
+
+### 🧑‍💻 Geliştirme & katkı
+
+Testleri çalıştır: `python tests/test_core.py` (her push'ta CI de çalıştırır).
+
+**Commit mesajı düzeni — [Conventional Commits](https://www.conventionalcommits.org/):** Her mesaj kısa bir önekle başlar ve *sadece o commit'te değişeni* anlatır (baştan her şeyi tekrar yazma):
+
+```
+fix:      hata düzeltmesi        →  fix: hafıza silme onay akışı
+feat:     yeni özellik           →  feat: hafıza yedekleme (JSON dışa/içe aktarma)
+docs:     sadece dokümantasyon   →  docs: README teknoloji tablosu
+refactor: davranış değişmeden kod düzeni
+test:     test ekleme/düzeltme
+chore:    yapılandırma, CI, bağımlılık
+```
 
 ---
 
@@ -147,12 +198,18 @@ MASON is a **free**, Jarvis-inspired personal AI assistant. Its superpower: as y
 - **Voice chat** — Speak via microphone (Whisper transcribes); Mason replies in a natural voice.
 - **"Hey Mason" wake word** — Listens in the background and comes forward when called. You can even interrupt it mid-sentence by saying "Hey Mason" (barge-in).
 - **Cinematic HUD** — Minimal, sleek, movie-like design; a MASON wordmark that glows with your voice, plus selectable color palettes.
-- **Password-protected memory wipe** — Optionally require a password before any memory is deleted.
+- **Password-protected memory wipe** — Optionally require a password before any memory is deleted; a confirmation dialog appears.
+- **Memory backup** — Export your whole memory to JSON in one click and restore it later (duplicates are skipped).
+- **Reminders** — Warns you in the background when tasks are due or overdue (system-tray + in-app notification).
 - **Free** — Google Gemini free tier or fully local Ollama.
 
 ### 🧰 Tech stack
 
-Python · [pywebview](https://pywebview.flowrl.com/) · SQLite · Google Gemini / Ollama · [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (STT) · [edge-tts](https://github.com/rany2/edge-tts) (TTS) · HTML/CSS/JS (Jarvis HUD)
+Pure Python + a web UI, no heavy framework. Every part is *optional* — if a package isn't installed, that feature turns off instead of crashing the app.
+
+Python · [pywebview](https://pywebview.flowrl.com/) (native window + Python↔JS bridge) · SQLite (persistent memory/tasks/plans) · Google Gemini / [Ollama](https://ollama.com) (provider-agnostic LLM) · embeddings + cosine similarity (semantic RAG search) · [faster-whisper](https://github.com/SYSTRAN/faster-whisper) + [sounddevice](https://python-sounddevice.readthedocs.io/) (STT) · [edge-tts](https://github.com/rany2/edge-tts) (TTS) · [pystray](https://github.com/moses-palmer/pystray) + [Pillow](https://python-pillow.org/) (tray, notifications, auto-start) · HTML/CSS/vanilla JS (Jarvis HUD)
+
+**How it works:** `agent.py` embeds your memory, open tasks and the date into one system prompt; the LLM replies normally and may include a hidden <code>```json:actions```</code> block (remember, add task, save plan, delete memory…). MASON strips and runs that block, then shows the natural reply. Memory is a category/project "tree"; once it grows past 40 items, semantic search picks the most relevant facts (falling back to newest if embeddings are unavailable — it never crashes).
 
 ### 🚀 Setup (Windows)
 
@@ -200,8 +257,13 @@ See the Turkish section above — same files. Your data lives in `mason.db` — 
 - [x] Phase 2: Voice chat (Whisper + TTS)
 - [x] Phase 3: "Hey Mason" + auto-start
 - [x] V2: Cinematic HUD, barge-in, themes, password-protected memory
+- [x] V2.1: Memory backup (JSON) + task reminders + CI
 - [ ] Make the Ollama provider fully working
-- [ ] Continuous conversation mode, reminders/notifications
+- [ ] Continuous conversation mode, calendar/notification integration
+
+### 🧑‍💻 Development
+
+Run tests: `python tests/test_core.py` (CI runs them on every push). Commits follow [Conventional Commits](https://www.conventionalcommits.org/) — a short prefix (`fix:`, `feat:`, `docs:`, `refactor:`, `test:`, `chore:`) describing only what changed in that commit.
 
 ---
 

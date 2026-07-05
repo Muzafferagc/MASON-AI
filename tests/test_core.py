@@ -63,7 +63,7 @@ sample = """Tamam, kaydettim!
 Baska bir sey var mi?"""
 clean, actions_json = agent.strip_actions(sample)
 check("aksiyon blogu cevaptan temizlenir", "json:actions" not in clean and "Baska bir sey" in clean)
-done = agent.execute_actions(actions_json)
+done, _pending = agent.execute_actions(actions_json)
 check("aksiyonlar calisir", len(done) == 2)
 check("remember aksiyonu hafizaya yazar",
       any("B1-B2" in m["content"] for m in memory.all_memories()))
@@ -79,7 +79,13 @@ check("fallback gorevi eklendi",
       any(t["title"] == "fallback gorevi" for t in planner.list_tasks("open")))
 
 # Bozuk JSON çökertmemeli
-check("bozuk json sessizce atlanir", agent.execute_actions("{bozuk!!") == [])
+check("bozuk json sessizce atlanir", agent.execute_actions("{bozuk!!") == ([], []))
+
+# Sifre korumali toplu hafiza silme: HEMEN silinmez, hepsi pending doner
+_before = memory.all_memory_ids()
+_done, _pending = agent.execute_actions('{"actions":[{"type":"clear_memory"}]}', {"memory_password": "1234"})
+check("clear_memory korumali modda pending doner", set(_pending) == set(_before) and len(_before) > 0)
+check("clear_memory korumali modda henuz silmez", memory.all_memory_ids() == _before)
 
 # ---------- Tam sohbet dongusu (sahte LLM ile) ----------
 class FakeProvider:
@@ -147,5 +153,30 @@ check("cift alkis: uygun aralik", is_double_clap([10.0, 10.5], 10.5))
 check("cift alkis: cok hizli sayilmaz", not is_double_clap([10.0, 10.05], 10.05))
 check("cift alkis: cok yavas sayilmaz", not is_double_clap([10.0, 12.0], 12.0))
 check("cift alkis: tek alkis yetmez", not is_double_clap([10.0], 10.0))
+
+# ---------- Hafiza yedekleme (export / import) ----------
+_dump = memory.export_memories()
+_before = len(memory.all_memories())
+check("export tum hafizayi verir", len(_dump) == _before and _before > 0)
+memory.forget_all()
+check("forget_all hepsini siler", len(memory.all_memories()) == 0)
+check("import yedegi geri yukler", memory.import_memories(_dump) == _before)
+check("import dedup: ikinci kez 0 ekler", memory.import_memories(_dump) == 0)
+
+# ---------- Hatirlaticilar (yaklasan / geciken gorevler) ----------
+from datetime import date, timedelta
+from mason import reminders
+
+_today = date.today().isoformat()
+_yest = (date.today() - timedelta(days=1)).isoformat()
+_tmrw = (date.today() + timedelta(days=1)).isoformat()
+planner.add_task("Gecikmis gorev", None, 1, _yest)
+planner.add_task("Bugunku gorev", None, 1, _today)
+planner.add_task("Yarinki gorev", None, 2, _tmrw)
+_due = reminders.due_tasks(days_ahead=1)
+check("hatirlatici: gecikmis gorevi yakalar", len(_due["overdue"]) >= 1)
+check("hatirlatici: bugunku gorevi yakalar", len(_due["today"]) >= 1)
+check("hatirlatici: yarinki gorevi yakalar", len(_due["soon"]) >= 1)
+check("hatirlatici: metin uretir", reminders.any_due() and reminders.format_reminder() is not None)
 
 print(f"\nTUM TESTLER GECTI ({passed}/{passed})")

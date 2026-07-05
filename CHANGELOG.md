@@ -12,6 +12,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Sürümleme / Version
 
 ## [Unreleased] — Yayınlanmadı
 
+### Eklendi (Ollama fazı)
+- **Ollama sağlayıcısı tam çalışır durumda:**
+  - Ayarlar'da **⚡ OLLAMA'YI TEST ET** butonu: sunucu ayakta mı, sohbet modeli (`ollama_model`) ve hafıza modeli (`ollama_embedding_model`) yüklü mü — tek tıkla kontrol. Yüklü modeller model kutusuna öneri olarak dolar (`api.ollama_status`).
+  - Ayarlar'daki motor seçimine **Hybrid** seçeneği eklendi (önerilen); hybrid'de hem Gemini hem Ollama alanları görünür.
+  - Model yüklü değilse artık anlaşılır hata: `'llama3.2' modeli yüklü değil → ollama pull llama3.2`. Bağlantı yoksa ollama.com kurulum yönlendirmesi.
+  - Düşünen modellerin (deepseek-r1 vb.) `<think>...</think>` iç monoloğu cevaptan temizleniyor.
+  - `keep_alive: 10m` — model bellekte kalır, ardışık sorular çok daha hızlı.
+  - Eski Ollama sürümleri için embedding geri düşüşü: `/api/embed` yoksa `/api/embeddings` denenir.
+  - **`ollama_kontrol.bat`**: çift tıkla Ollama kurulum/çalışma/model durumunu gösteren teşhis aracı.
+  - 10 yeni birim testi (sahte HTTP ile; gerçek Ollama gerektirmez).
+
 ### Değişti
 - **API kota sorununa karşı "hybrid" LLM modu:** `provider` artık `hybrid` olabilir. Önce Gemini kullanılır; kota/limit hatası (HTTP 429/503) gelince otomatik olarak yerel Ollama'ya düşer ve `hybrid_cooldown_sec` (varsayılan 900 sn) boyunca doğrudan yerel modeli kullanır — böylece uygulama kota dolunca artık çökmüyor. Embedding'ler de aynı sırayı (Gemini→Ollama) izler.
 
@@ -60,7 +71,7 @@ Major release: cinematic V2 UI, a much smarter voice system, and GitHub readines
 - "Hey Mason" deyince pencerenin tam ekrandan çıkıp pencereliye dönmesi.
 
 ### Biliniyor / Known issues
-- **Ollama sağlayıcısı** henüz tam çalışmıyor; ileride ele alınacak.
+- ~~**Ollama sağlayıcısı** henüz tam çalışmıyor; ileride ele alınacak.~~ *(Unreleased sürümünde tamamlandı.)*
 
 ---
 

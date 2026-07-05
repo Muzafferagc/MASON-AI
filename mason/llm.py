@@ -6,6 +6,7 @@ Uc mod desteklenir:
   3. hybrid  - once Gemini; kota dolunca (HTTP 429) otomatik yerel Ollama'ya duser
 Hepsi ayni arayuzu kullanir: chat(system_prompt, messages) -> str
 """
+import re
 import time
 
 import requests
@@ -75,16 +76,64 @@ class OllamaProvider:
         try:
             resp = requests.post(
                 f"{self.base_url}/api/chat",
-                json={"model": self.model, "messages": chat_messages, "stream": False},
+                json={
+                    "model": self.model,
+                    "messages": chat_messages,
+                    "stream": False,
+                    # model 10 dk bellekte kalsin -> ardisik sorular hizli olur
+                    "keep_alive": "10m",
+                    "options": {"temperature": 0.7},
+                },
                 timeout=300,
             )
         except requests.RequestException as e:
             raise LLMError(
-                f"Ollama'ya baglanilamadi ({self.base_url}). Ollama calisiyor mu? {e}"
+                f"Ollama'ya bağlanılamadı ({self.base_url}). Ollama kurulu ve "
+                f"çalışıyor mu? İndirmek için: https://ollama.com — Hata: {e}"
             ) from e
+        if resp.status_code == 404 or (
+            resp.status_code != 200 and "not found" in resp.text.lower()
+        ):
+            raise LLMError(
+                f"'{self.model}' modeli Ollama'da yüklü değil. Terminalde şunu "
+                f"çalıştır: ollama pull {self.model}"
+            )
+        if resp.status_code in (429, 503):
+            raise RateLimitError(
+                f"Ollama şu an meşgul (HTTP {resp.status_code}). Birazdan tekrar dene."
+            )
         if resp.status_code != 200:
-            raise LLMError(f"Ollama hatasi (HTTP {resp.status_code}): {resp.text[:300]}")
-        return resp.json()["message"]["content"]
+            raise LLMError(f"Ollama hatası (HTTP {resp.status_code}): {resp.text[:300]}")
+        try:
+            content = resp.json()["message"]["content"]
+        except (KeyError, ValueError) as e:
+            raise LLMError(
+                f"Ollama beklenmedik cevap döndürdü: {resp.text[:300]}"
+            ) from e
+        # Bazi "dusunen" modeller (deepseek-r1 vb.) <think>...</think> blogu ekler
+        return _strip_think(content)
+
+
+def _strip_think(text: str) -> str:
+    """Dusunen modellerin <think>...</think> ic monologunu cevaptan temizler."""
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+
+def ollama_status(base_url: str = "http://localhost:11434") -> dict:
+    """Ollama sunucusunun durumunu ve yuklu modelleri dondurur.
+    UI'daki 'Bağlantıyı Test Et' butonu bunu kullanir."""
+    base = (base_url or "http://localhost:11434").rstrip("/")
+    try:
+        resp = requests.get(f"{base}/api/tags", timeout=5)
+    except requests.RequestException:
+        return {"running": False, "models": []}
+    if resp.status_code != 200:
+        return {"running": False, "models": []}
+    try:
+        models = [m["name"] for m in resp.json().get("models", [])]
+    except (KeyError, ValueError):
+        models = []
+    return {"running": True, "models": models}
 
 
 class HybridProvider:

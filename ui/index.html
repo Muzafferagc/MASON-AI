@@ -302,9 +302,11 @@
     <h2>SİSTEM AYARLARI</h2>
     <label>YAPAY ZEKA MOTORU</label>
     <select id="s-provider">
+      <option value="hybrid">Hybrid — Gemini + yerel Ollama yedek (önerilen)</option>
       <option value="gemini">Gemini API (bulut, ücretsiz kota)</option>
       <option value="ollama">Ollama (yerel, tamamen ücretsiz)</option>
     </select>
+    <div class="hint">Hybrid: önce Gemini; kota dolunca otomatik yerel Ollama'ya geçer.</div>
 
     <div id="f-gemini" class="provider-fields">
       <label>GEMINI API ANAHTARI</label>
@@ -318,7 +320,12 @@
       <label>OLLAMA ADRESİ</label>
       <input id="s-ollama-url" placeholder="http://localhost:11434">
       <label>MODEL</label>
-      <input id="s-ollama-model" placeholder="llama3.2">
+      <input id="s-ollama-model" placeholder="llama3.2" list="ollama-models">
+      <datalist id="ollama-models"></datalist>
+      <div class="row" style="margin-top:8px;">
+        <button class="btn ghost" id="s-ollama-test" type="button">⚡ OLLAMA'YI TEST ET</button>
+      </div>
+      <div class="hint" id="ollama-status">Ollama kurulu değilse: <a href="https://ollama.com" target="_blank">ollama.com</a> → indir → terminalde <b>ollama pull llama3.2</b></div>
     </div>
 
     <label>ADIN</label>
@@ -802,10 +809,36 @@ function renderPanel() {
 /* ============ AYARLAR ============ */
 function showProviderFields() {
   const v = $("s-provider").value;
-  $("f-gemini").classList.toggle("show", v === "gemini");
-  $("f-ollama").classList.toggle("show", v === "ollama");
+  // hybrid modda iki saglayicinin da ayarlari gorunur
+  $("f-gemini").classList.toggle("show", v === "gemini" || v === "hybrid");
+  $("f-ollama").classList.toggle("show", v === "ollama" || v === "hybrid");
 }
 $("s-provider").onchange = showProviderFields;
+
+/* Ollama baglanti testi: sunucu ayakta mi, modeller yuklu mu? */
+$("s-ollama-test").onclick = async () => {
+  const el = $("ollama-status");
+  el.innerHTML = "⏳ Bağlanılıyor...";
+  try {
+    const r = await window.pywebview.api.ollama_status($("s-ollama-url").value.trim());
+    if (!r.running) {
+      el.innerHTML = "⚠️ Ollama'ya bağlanılamadı. Kurulu ve çalışıyor mu? İndir: <a href='https://ollama.com' target='_blank'>ollama.com</a>";
+      return;
+    }
+    // Yuklu modelleri model kutusuna oneri olarak doldur
+    $("ollama-models").innerHTML = r.models.map((m) => '<option value="' + m + '">').join("");
+    let msg = "✅ Ollama çalışıyor — " + r.models.length + " model yüklü";
+    msg += r.chat_model_ok
+      ? "<br>✅ Sohbet modeli hazır: <b>" + r.chat_model + "</b>"
+      : "<br>⚠️ <b>" + r.chat_model + "</b> yüklü değil → terminalde: <b>ollama pull " + r.chat_model + "</b>";
+    msg += r.embed_model_ok
+      ? "<br>✅ Hafıza modeli hazır: <b>" + r.embed_model + "</b>"
+      : "<br>⚠️ <b>" + r.embed_model + "</b> yüklü değil → <b>ollama pull " + r.embed_model + "</b> (anlamsal hafıza için)";
+    el.innerHTML = msg;
+  } catch (e) {
+    el.innerHTML = "⚠️ Test başarısız: " + e;
+  }
+};
 
 $("settings-btn").onclick = async () => {
   const c = await window.pywebview.api.get_settings();

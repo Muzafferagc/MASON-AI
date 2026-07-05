@@ -12,11 +12,12 @@ DB_FILE = BASE_DIR / "mason.db"
 
 # Varsayilan ayarlar
 DEFAULTS = {
-    "provider": "gemini",            # "gemini" veya "ollama"
+    "provider": "hybrid",            # "gemini" / "ollama" / "hybrid" (Gemini + yerel yedek)
     "gemini_api_key": "",            # https://aistudio.google.com adresinden ucretsiz alinir
     "gemini_model": "gemini-2.5-flash",
     "ollama_url": "http://localhost:11434",
     "ollama_model": "llama3.2",
+    "hybrid_cooldown_sec": 900,      # Gemini kotasi dolunca kac sn yerel modelde kal
     "user_name": "Muzaffer",
     # Faz 1.5 - anlamsal hafiza (embeddings)
     "gemini_embedding_model": "gemini-embedding-001",

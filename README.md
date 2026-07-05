@@ -114,7 +114,11 @@ MASON'ın kalbi basit ama güçlü bir **aksiyon protokolü**dür — sağlayıc
 
 ### 🧩 Alternatif: Ollama (internet/anahtar gerektirmez)
 
-> ⚠️ **Not:** Ollama sağlayıcısı şu an geliştirme aşamasında; ilerideki bir sürümde tam desteklenecek. Şimdilik Gemini önerilir.
+1. [ollama.com](https://ollama.com) adresinden indir ve kur.
+2. Terminalde modelleri indir: `ollama pull llama3.2` ve `ollama pull nomic-embed-text` (anlamsal hafıza için).
+3. MASON Ayarlar → motor olarak **Ollama** ya da **Hybrid** seç → **⚡ OLLAMA'YI TEST ET** ile doğrula.
+
+Kurulumu kontrol etmek için `ollama_kontrol.bat` dosyasına çift tıklayabilirsin. **Hybrid** mod önerilir: önce Gemini, kota dolunca otomatik yerel Ollama.
 
 ### 📂 Proje yapısı
 
@@ -160,7 +164,7 @@ yedekler/            → hafıza yedekleri (JSON) — dışa aktarınca oluşur
 - [x] Faz 3: "Hey Mason" + otomatik başlatma
 - [x] V2: Sinematik HUD, barge-in, temalar, şifreli hafıza
 - [x] V2.1: Hafıza yedekleme (JSON) + görev hatırlatıcıları + CI
-- [ ] Ollama sağlayıcısını tam çalışır hale getirme
+- [x] Ollama sağlayıcısını tam çalışır hale getirme (hybrid mod, uygulama içi test, teşhis aracı)
 - [ ] Kesintisiz konuşma modu, takvim/bildirim entegrasyonu
 
 ### 🧑‍💻 Geliştirme & katkı
@@ -244,7 +248,11 @@ Double-click `kurulum.bat` once. It adds **MASON Aç** / **MASON Kapat** desktop
 
 ### 🧩 Alternative: Ollama (no internet/key needed)
 
-> ⚠️ **Note:** The Ollama provider is currently a work in progress and will be fully supported in a future release. Gemini is recommended for now.
+1. Install from [ollama.com](https://ollama.com).
+2. Pull the models: `ollama pull llama3.2` and `ollama pull nomic-embed-text` (for semantic memory).
+3. In MASON Settings pick **Ollama** or **Hybrid** and verify with the **⚡ TEST OLLAMA** button.
+
+**Hybrid** is recommended: Gemini first, automatic local fallback when the quota runs out. `ollama_kontrol.bat` is a double-click diagnostic tool.
 
 ### 📂 Project structure
 
@@ -258,7 +266,7 @@ See the Turkish section above — same files. Your data lives in `mason.db` — 
 - [x] Phase 3: "Hey Mason" + auto-start
 - [x] V2: Cinematic HUD, barge-in, themes, password-protected memory
 - [x] V2.1: Memory backup (JSON) + task reminders + CI
-- [ ] Make the Ollama provider fully working
+- [x] Make the Ollama provider fully working (hybrid mode, in-app test, diagnostics)
 - [ ] Continuous conversation mode, calendar/notification integration
 
 ### 🧑‍💻 Development

@@ -149,6 +149,27 @@ class Api:
         save_config(cfg)
         return cfg
 
+    def ollama_status(self, url: str = "") -> dict:
+        """Ollama calisiyor mu, hangi modeller yuklu? (Ayarlar > Test butonu)
+        Sohbet modeli ve embedding modeli yuklu mu diye de bakar."""
+        from mason.llm import ollama_status
+        cfg = load_config()
+        base = (url or cfg.get("ollama_url") or "http://localhost:11434")
+        st = ollama_status(base)
+        chat_model = cfg.get("ollama_model", "llama3.2")
+        emb_model = cfg.get("ollama_embedding_model", "nomic-embed-text")
+        # "llama3.2" ile "llama3.2:latest" ayni modeldir -> iki yonlu esle
+        def has(name: str) -> bool:
+            return any(
+                m == name or m.split(":")[0] == name or name.split(":")[0] == m
+                for m in st["models"]
+            )
+        st["chat_model"] = chat_model
+        st["chat_model_ok"] = st["running"] and has(chat_model)
+        st["embed_model"] = emb_model
+        st["embed_model_ok"] = st["running"] and has(emb_model)
+        return st
+
     # ---- Ses (Faz 2) ----
     def voice_status(self) -> dict:
         st = voice.status()

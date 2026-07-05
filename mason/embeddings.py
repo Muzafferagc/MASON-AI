@@ -51,15 +51,25 @@ def _embed_gemini(text: str, config: dict) -> list[float] | None:
 def _embed_ollama(text: str, config: dict) -> list[float] | None:
     base = config.get("ollama_url", "http://localhost:11434").rstrip("/")
     model = config.get("ollama_embedding_model", "nomic-embed-text")
+    # Yeni Ollama surumleri: /api/embed
     resp = requests.post(
         f"{base}/api/embed",
         json={"model": model, "input": text[:8000]},
         timeout=60,
     )
+    if resp.status_code == 200:
+        embs = resp.json().get("embeddings")
+        if embs:
+            return embs[0]
+    # Eski Ollama surumleri: /api/embeddings (tekil, farkli alan adlari)
+    resp = requests.post(
+        f"{base}/api/embeddings",
+        json={"model": model, "prompt": text[:8000]},
+        timeout=60,
+    )
     if resp.status_code != 200:
         return None
-    embs = resp.json().get("embeddings")
-    return embs[0] if embs else None
+    return resp.json().get("embedding") or None
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:

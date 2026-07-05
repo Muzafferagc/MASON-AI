@@ -179,4 +179,92 @@ check("hatirlatici: bugunku gorevi yakalar", len(_due["today"]) >= 1)
 check("hatirlatici: yarinki gorevi yakalar", len(_due["soon"]) >= 1)
 check("hatirlatici: metin uretir", reminders.any_due() and reminders.format_reminder() is not None)
 
+# ---------- Ollama saglayicisi (sahte HTTP ile, gercek Ollama gerekmez) ----------
+from mason import llm as llm_module
+from mason import embeddings as emb_module
+from mason.llm import OllamaProvider, HybridProvider, LLMError, RateLimitError, _strip_think
+
+
+class FakeResp:
+    def __init__(self, status_code=200, payload=None, text=""):
+        self.status_code = status_code
+        self._payload = payload or {}
+        self.text = text or str(payload)
+
+    def json(self):
+        return self._payload
+
+
+_real_post, _real_get = llm_module.requests.post, llm_module.requests.get
+
+# 1) Basarili sohbet + <think> temizligi
+llm_module.requests.post = lambda *a, **k: FakeResp(
+    200, {"message": {"content": "<think>ic monolog</think>Merhaba Muzaffer!"}})
+check("ollama: basarili cevap + think temizligi",
+      OllamaProvider().chat("sys", [{"role": "user", "content": "selam"}]) == "Merhaba Muzaffer!")
+
+# 2) Model yuklu degil (404) -> anlasilir hata + pull onerisi
+llm_module.requests.post = lambda *a, **k: FakeResp(404, {}, "model 'llama3.2' not found")
+try:
+    OllamaProvider().chat("sys", [{"role": "user", "content": "x"}])
+    check("ollama: 404 hata firlatmali", False)
+except LLMError as e:
+    check("ollama: model yoksa 'ollama pull' onerir", "ollama pull" in str(e))
+
+# 3) Baglanti hatasi -> kurulum linkli mesaj
+def _conn_err(*a, **k):
+    raise llm_module.requests.ConnectionError("baglanti reddedildi")
+llm_module.requests.post = _conn_err
+try:
+    OllamaProvider().chat("sys", [{"role": "user", "content": "x"}])
+    check("ollama: baglanti hatasi firlatmali", False)
+except LLMError as e:
+    check("ollama: baglanti hatasinda ollama.com onerilir", "ollama.com" in str(e))
+
+# 4) Hybrid: Gemini kota hatasi -> Ollama'ya duser
+class FakeQuotaGemini:
+    def chat(self, s, m):
+        raise RateLimitError("kota doldu")
+
+class FakeOllama:
+    def chat(self, s, m):
+        return "yerel cevap"
+
+hy = HybridProvider(FakeQuotaGemini(), FakeOllama(), cooldown_seconds=900)
+check("hybrid: kota dolunca yerel cevap", hy.chat("s", []) == "yerel cevap")
+check("hybrid: cooldown boyunca dogrudan yerel", hy.chat("s", []) == "yerel cevap")
+
+# 5) ollama_status: sunucu ayakta, model listesi
+llm_module.requests.get = lambda *a, **k: FakeResp(
+    200, {"models": [{"name": "llama3.2:latest"}, {"name": "nomic-embed-text:latest"}]})
+st = llm_module.ollama_status()
+check("ollama_status: calisiyor + modeller", st["running"] and "llama3.2:latest" in st["models"])
+
+def _get_err(*a, **k):
+    raise llm_module.requests.ConnectionError("yok")
+llm_module.requests.get = _get_err
+check("ollama_status: kapaliyken running=False", llm_module.ollama_status()["running"] is False)
+
+# 6) Embedding: yeni /api/embed calisir; eski surumde /api/embeddings'e duser
+def _embed_new(url, **k):
+    if url.endswith("/api/embed"):
+        return FakeResp(200, {"embeddings": [[0.1, 0.2]]})
+    return FakeResp(404, {})
+emb_module.requests.post = _embed_new
+check("embed: yeni uc nokta", emb_module._embed_ollama("test", {}) == [0.1, 0.2])
+
+def _embed_old(url, **k):
+    if url.endswith("/api/embed"):
+        return FakeResp(404, {}, "not found")
+    return FakeResp(200, {"embedding": [0.3, 0.4]})
+emb_module.requests.post = _embed_old
+check("embed: eski uc noktaya geri duser", emb_module._embed_ollama("test", {}) == [0.3, 0.4])
+
+check("think temizligi coklu blok", _strip_think("<think>a</think>cevap") == "cevap")
+
+# HTTP taklitlerini geri al
+llm_module.requests.post = _real_post
+llm_module.requests.get = _real_get
+emb_module.requests.post = _real_post
+
 print(f"\nTUM TESTLER GECTI ({passed}/{passed})")

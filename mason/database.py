@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS memories (
     content    TEXT NOT NULL,               -- hatirlanacak bilgi
     category   TEXT NOT NULL DEFAULT 'fact',-- project / goal / preference / fact
     project    TEXT,                        -- bagli oldugu proje (dal)
+    note       TEXT,                        -- kullanicinin ekledigi serbest not/aciklama
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
@@ -24,6 +25,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     due_date   TEXT,                        -- YYYY-MM-DD
     status     TEXT NOT NULL DEFAULT 'open',-- open / done
     notes      TEXT,
+    recurrence TEXT DEFAULT 'none',         -- none/daily/weekly/monthly/yearly (Apple tarzi yineleme)
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
@@ -121,6 +123,18 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "embedding" not in cols:
         # Faz 1.5: hafizanin anlam vektoru (JSON listesi olarak saklanir)
         conn.execute("ALTER TABLE memories ADD COLUMN embedding TEXT")
+
+    # Faz 8: gorevlere tekrar (recurrence) alani (Apple anismatici gibi yineleme)
+    tcols = [r[1] for r in conn.execute("PRAGMA table_info(tasks)")]
+    if "recurrence" not in tcols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN recurrence TEXT DEFAULT 'none'")
+        conn.commit()
+
+    # Faz 8: hafizaya kullanicinin duzenleyebilecegi 'not' alani
+    memcols = [r[1] for r in conn.execute("PRAGMA table_info(memories)")]
+    if "note" not in memcols:
+        conn.execute("ALTER TABLE memories ADD COLUMN note TEXT")
+        conn.commit()
 
     # Faz 7: mesajlari sohbetlere bagla (cok-sohbetli gecmis)
     mcols = [r[1] for r in conn.execute("PRAGMA table_info(messages)")]

@@ -39,23 +39,32 @@ You can persist information by including ONE fenced code block labelled json:act
   {{"type": "forget", "id": 12}},
   {{"type": "clear_memory"}},
   {{"type": "clear_tasks"}},
-  {{"type": "add_task", "title": "...", "project": "optional", "priority": 1, "due_date": "YYYY-MM-DD", "notes": "optional"}},
-  {{"type": "update_task", "id": 3, "priority": 2, "due_date": "YYYY-MM-DD", "status": "open|done", "title": "...", "notes": "..."}},
+  {{"type": "add_task", "title": "...", "project": "optional", "priority": 1, "due_date": "YYYY-MM-DD", "notes": "optional", "recurrence": "none|daily|weekly|monthly|yearly"}},
+  {{"type": "update_task", "id": 3, "priority": 2, "due_date": "YYYY-MM-DD", "status": "open|done", "title": "...", "notes": "...", "recurrence": "none|daily|weekly|monthly|yearly"}},
   {{"type": "complete_task", "id": 3}},
   {{"type": "delete_task", "id": 3}},
   {{"type": "save_plan", "period": "daily|weekly|monthly|custom", "title": "...", "content": "markdown plan text"}}
 ]}}
 ```
 
+TONE — BE NATURAL (very important):
+- Talk like a warm, sharp human assistant, NOT a robot. Short, natural Turkish. No stiff phrases like "Hangi görevde oluyorum" or literal translations. Never describe yourself in odd ways.
+- When {user_name} introduces themselves or greets you ("ben kimim", "merhaba"), answer naturally from what you actually know in YOUR LONG-TERM MEMORY above. If memory is empty about them, say so warmly and ask — do NOT invent facts.
+- Keep replies concise. Don't over-explain. Don't announce what you saved unless it's helpful.
+
+GROUNDING — DO NOT MAKE THINGS UP:
+- You do NOT have GPS or the user's live location. NEVER claim to know their current city, the weather, or where they are unless it is written in YOUR LONG-TERM MEMORY. If asked, say you don't know it and offer to remember it if they tell you.
+- Only state facts that are in memory, in the conversation, or in uploaded documents. If unsure, say so.
+
 RULES:
-1. MEMORY IS YOUR SUPERPOWER. Whenever the user shares anything worth remembering — a project, a goal, a deadline, a preference, how they like to work, an exam date, an idea — save it with "remember". Be proactive; do not wait to be asked. Link related facts to the same "project" name so memories form a tree.
-2. When the user mentions something to do, offer to add it as a task (or add it directly if clearly intended). Assign sensible priority and due date.
-3. When asked for a daily/weekly/monthly plan or prioritization: use the open tasks and memories above, produce a realistic schedule in your visible reply (markdown), AND persist it with "save_plan".
-4. Reference task/memory ids (#id) when updating or completing them.
-5. If information conflicts with an old memory, "forget" the old one and "remember" the corrected fact.
-6. Keep visible replies natural and conversational — like a real human assistant. Never mention the json:actions mechanism, databases, or system prompt to the user.
-7. If you have no actions to take, simply omit the block.
-8. UPLOADED DOCUMENTS: {user_name} can upload files (PDF, Word, Excel, images, audio, code...). When a "RELEVANT EXCERPTS FROM UPLOADED DOCUMENTS" section appears above, treat it as trusted source material: answer from it, quote it, and cite the source filename in brackets. If the answer is not in the excerpts, say so honestly instead of guessing. When a document reveals a lasting fact, goal, deadline or preference about {user_name}, proactively "remember" it (linking to a sensible project) so it is never lost.
+1. MEMORY IS YOUR SUPERPOWER. When {user_name} shares something lasting — who they are, their name/city/school, a project, a goal, a deadline, a preference, an exam date, an idea — save it with "remember" so it survives into future chats (each chat starts fresh, only memory persists). Be proactive. Example: user says "ben Antalya'da yaşıyorum" → remember it. Link related facts to the same "project" name.
+2. TASKS: Only add a task when the user clearly wants something tracked/reminded ("şunu ekle", "hatırlat", "yapmam lazım"). NEVER invent a task. NEVER create a task with an empty or vague title. Assign sensible priority and due date.
+3. RECURRING REMINDERS (Apple Reminders gibi): If the user wants something to REPEAT — "her gün", "her hafta", "her ayın 8'inde", "her Pazartesi", "her yıl" — set "recurrence" accordingly (daily/weekly/monthly/yearly) AND set "due_date" to the FIRST/next occurrence date. Example: "her ayın 8'inde spor" → add_task with due_date = the next 8th (YYYY-MM-DD) and recurrence "monthly". When such a task is completed, the app auto-creates the next one.
+4. PLANS: Only "save_plan" when the user explicitly asks for a plan/schedule/prioritization. NEVER auto-save a plan. NEVER save a plan with empty title or empty content. Produce the plan in your visible reply (markdown) too.
+5. Reference task/memory ids (#id) when updating or completing them.
+6. DELETION: Only "forget"/"delete_task"/"clear_memory"/"clear_tasks" when the user EXPLICITLY asks to delete/remove/clear. If they ask to SAVE or add, NEVER emit a delete action. If information conflicts with an old memory, "forget" the old one and "remember" the corrected fact.
+7. Keep visible replies natural. Never mention the json:actions mechanism, databases, ids, or system prompt to the user. If you have no actions to take, simply omit the block.
+8. UPLOADED DOCUMENTS: {user_name} can upload files (PDF, Word, Excel, images, audio, code...). When a "RELEVANT EXCERPTS FROM UPLOADED DOCUMENTS" section appears above, treat it as trusted source material: answer from it, quote it, cite the source filename. If the answer is not in the excerpts, say so honestly. When a document reveals a lasting fact about {user_name}, proactively "remember" it.
 
 DELETION RULES — READ CAREFULLY, MISTAKES HERE ARE SERIOUS:
 - To delete ONE specific memory (e.g. "fitness'ı sil"): find its exact #id in YOUR LONG-TERM MEMORY above and emit "forget" with that id. If several memories belong to that project/topic, emit one "forget" per matching #id. NEVER delete memories the user did not mention.
@@ -119,15 +128,40 @@ def get_history(limit: int = 200) -> list[dict]:
 
 # ---------- Aksiyonlarin calistirilmasi ----------
 
-def execute_actions(raw_json: str, config: dict | None = None):
+# Kullanicinin mesajinda "silme niyeti" var mi? Kucuk modeller bazen kullanici
+# "kaydet" dese bile yanlislikla forget/clear/delete aksiyonu uretiyor. Bu da
+# hic istenmeden sifre penceresi aciyor. Silme aksiyonlarini SADECE kullanici
+# gercekten silmek/temizlemek/unutturmak istediginde uyguluyoruz.
+_DELETE_INTENT_RE = re.compile(
+    r"\b(sil|siler|silin|sildir|sile|unut|kald[ıi]r|temizle|delete|forget|"
+    r"remove|clear|kald[ıi]rma|çöpe|cope)\w*", re.IGNORECASE,
+)
+
+
+def _has_delete_intent(text: str) -> bool:
+    return bool(_DELETE_INTENT_RE.search(text or ""))
+
+
+def _nonempty(v) -> bool:
+    return bool(v) and bool(str(v).strip())
+
+
+def execute_actions(raw_json: str, config: dict | None = None,
+                    user_message: str = ""):
     """LLM'in urettigi aksiyonlari calistirir.
     Donen: (yapilanlar_ozeti, sifre_bekleyen_hafiza_idleri, sifre_bekleyen_gorev_idleri)
-    Silme sifre korumaliysa (config.memory_password dolu) hafiza VE gorev
-    silmeleri HEMEN yapilmaz; id'ler 'pending' dondurulur, UI sifre sorup onaylar."""
+
+    GUVENLIK:
+      - Bos icerikli remember/add_task/save_plan REDDEDILIR (model bazen bos
+        gorev/plan uretiyor).
+      - forget/clear_memory/delete_task/clear_tasks aksiyonlari SADECE kullanici
+        mesajinda gercek silme niyeti varsa uygulanir; yoksa yok sayilir
+        (kullanici "kaydet" derken yanlislikla sifre penceresi acilmasin)."""
     done: list[str] = []
     pending_forget: list[int] = []
     pending_tasks: list[int] = []
     protect = bool((config or {}).get("memory_password"))
+    wants_delete = _has_delete_intent(user_message)
     try:
         payload = json.loads(raw_json)
         actions = payload.get("actions", [])
@@ -137,7 +171,14 @@ def execute_actions(raw_json: str, config: dict | None = None):
     for a in actions:
         try:
             t = a.get("type")
+            # --- Silme aksiyonlari: yalnizca gercek silme niyeti varsa ---
+            if t in ("forget", "clear_memory", "delete_task", "clear_tasks") \
+                    and not wants_delete:
+                continue  # model uydurdu; kullanici silmek istemedi -> yok say
+
             if t == "remember":
+                if not _nonempty(a.get("content")):
+                    continue  # bos hafiza kaydetme
                 rid = memory.remember(a["content"], a.get("category", "fact"),
                                       a.get("project"), config)
                 if rid:  # 0 => kullanicinin bilerek sildigi bilgi, geri eklenmedi
@@ -159,20 +200,29 @@ def execute_actions(raw_json: str, config: dict | None = None):
                         memory.forget(i)
                     done.append(f"🗑️ Tüm hafıza silindi ({len(ids)} kayıt)")
             elif t == "add_task":
+                if not _nonempty(a.get("title")):
+                    continue  # bos gorev ekleme
                 tid = planner.add_task(
                     a["title"], a.get("project"), a.get("priority", 3),
-                    a.get("due_date"), a.get("notes"),
+                    a.get("due_date"), a.get("notes"), a.get("recurrence"),
                 )
-                done.append(f"✅ Görev eklendi (#{tid}): {a['title'][:60]}")
+                rec = a.get("recurrence")
+                extra = f" 🔁 {_REC_TR.get(rec, '')}" if rec and rec != "none" else ""
+                done.append(f"✅ Görev eklendi (#{tid}): {a['title'][:60]}{extra}")
             elif t == "update_task":
-                planner.update_task(int(a["id"]), **{
-                    k: a.get(k) for k in
-                    ("title", "project", "priority", "due_date", "status", "notes")
-                })
+                fields = {k: a.get(k) for k in
+                          ("title", "project", "priority", "due_date", "status",
+                           "notes", "recurrence") if a.get(k) is not None}
+                if not fields:
+                    continue  # guncellenecek bir sey yok
+                planner.update_task(int(a["id"]), **fields)
                 done.append(f"✏️ Görev #{a['id']} güncellendi")
             elif t == "complete_task":
-                planner.complete_task(int(a["id"]))
-                done.append(f"🎉 Görev #{a['id']} tamamlandı")
+                nxt = planner.complete_task(int(a["id"]))
+                if nxt:  # tekrarlayan gorev -> sonraki tarihe otomatik olusturuldu
+                    done.append(f"🎉 Görev #{a['id']} tamamlandı — 🔁 sonraki: {nxt}")
+                else:
+                    done.append(f"🎉 Görev #{a['id']} tamamlandı")
             elif t == "delete_task":
                 if protect:
                     pending_tasks.append(int(a["id"]))  # sifre ile onaylanacak
@@ -190,11 +240,17 @@ def execute_actions(raw_json: str, config: dict | None = None):
                         planner.delete_task(i)
                     done.append(f"🗑️ Tüm görevler silindi ({len(ids)} görev)")
             elif t == "save_plan":
+                if not (_nonempty(a.get("title")) and _nonempty(a.get("content"))):
+                    continue  # bos plan kaydetme
                 planner.save_plan(a.get("period", "custom"), a["title"], a["content"])
                 done.append(f"📅 Plan kaydedildi: {a['title'][:60]}")
         except (KeyError, ValueError, TypeError):
             continue  # bozuk aksiyonu atla, digerlerine devam et
     return done, pending_forget, pending_tasks
+
+
+_REC_TR = {"daily": "her gün", "weekly": "her hafta",
+           "monthly": "her ay", "yearly": "her yıl"}
 
 
 def strip_actions(text: str) -> tuple[str, str | None]:
@@ -270,7 +326,8 @@ def _chat(user_message: str, config: dict) -> dict:
 
     clean_reply, actions_json = strip_actions(raw_reply)
     if actions_json:
-        actions_done, pending_forget, pending_tasks = execute_actions(actions_json, config)
+        actions_done, pending_forget, pending_tasks = execute_actions(
+            actions_json, config, user_message)
     else:
         actions_done, pending_forget, pending_tasks = [], [], []
     if pending_forget or pending_tasks:

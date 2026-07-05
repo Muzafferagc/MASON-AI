@@ -435,4 +435,39 @@ chats.delete_chat(_c1)
 check("sohbet: silinir", not any(c["id"] == _c1 for c in chats.list_chats()))
 check("sohbet: silinen sohbetin mesajları da gider", chats.get_messages(_c1) == [])
 
+# ---------- Faz 8: Tekrar eden görevler (Apple Reminders gibi) ----------
+check("recurrence: aylık sonraki tarih (8 -> gelecek ay 8)",
+      planner.next_occurrence("2026-07-08", "monthly") == "2026-08-08")
+from datetime import date as _date
+check("recurrence: ay sonu kırpma (31 Ocak +1ay -> 28 Şubat)",
+      planner._add_months(_date(2026, 1, 31), 1) == _date(2026, 2, 28))
+check("recurrence: none -> None", planner.next_occurrence("2026-07-08", "none") is None)
+_rid = planner.add_task("Her ayın 8'i spor", "Sağlık", 2, "2026-08-08", None, "monthly")
+_rtask = [t for t in planner.list_tasks("all") if t["id"] == _rid][0]
+check("recurrence: add_task recurrence kaydeder", _rtask["recurrence"] == "monthly")
+_nxt = planner.complete_task(_rid)
+check("recurrence: tamamlanınca sonraki tarih döner", _nxt == "2026-09-08")
+check("recurrence: sonraki tekrar açık görev olur",
+      any(t["due_date"] == "2026-09-08" and t["recurrence"] == "monthly"
+          for t in planner.list_tasks("open")))
+check("recurrence: tekrarsız tamamlanınca None",
+      planner.complete_task(planner.add_task("tek", None, 3, "2026-07-10")) is None)
+
+# ---------- Faz 8: Detay/düzenleme (memory + plan güncelleme) ----------
+_umid = memory.remember("Eski içerik test", "fact", "X")
+memory.update_memory(_umid, content="Yeni içerik test", category="goal",
+                     note="benim notum")
+_um = [m for m in memory.all_memories() if m["id"] == _umid][0]
+check("update_memory: içerik + kategori + not güncellenir",
+      _um["content"] == "Yeni içerik test" and _um["category"] == "goal"
+      and _um["note"] == "benim notum")
+_upid = planner.save_plan("weekly", "Plan X", "eski")
+planner.update_plan(_upid, title="Plan Y", content="yeni içerik")
+_up = [p for p in planner.list_plans() if p["id"] == _upid][0]
+check("update_plan: başlık + içerik güncellenir",
+      _up["title"] == "Plan Y" and _up["content"] == "yeni içerik")
+
+# ---------- Faz 8: Konum algılama fonksiyonu mevcut ----------
+check("weather: detect_location fonksiyonu var", hasattr(weather, "detect_location"))
+
 print(f"\nTUM TESTLER GECTI ({passed}/{passed})")

@@ -280,6 +280,18 @@
   #pw-modal-bg { display: none; position: fixed; inset: 0; background: rgba(1,3,8,.78); align-items: center; justify-content: center; z-index: 60; backdrop-filter: blur(9px); }
   #pw-modal-bg.show { display: flex; animation: msgIn .3s; }
   #pw-modal { background: var(--glass-2); border: 1px solid var(--stroke-2); border-radius: 20px; padding: 28px; width: 380px; max-width: 92vw; box-shadow: 0 30px 90px rgba(0,0,0,.6), 0 0 70px rgba(var(--accentRGB),.1); backdrop-filter: blur(26px); }
+  #detail-bg { display: none; position: fixed; inset: 0; background: rgba(1,3,8,.78); align-items: center; justify-content: center; z-index: 62; backdrop-filter: blur(9px); }
+  #detail-bg.show { display: flex; animation: msgIn .3s; }
+  #detail-modal { background: var(--glass-2); border: 1px solid var(--stroke-2); border-radius: 20px; padding: 28px; width: 480px; max-width: 92vw; max-height: 88vh; overflow-y: auto; box-shadow: 0 30px 90px rgba(0,0,0,.6), 0 0 70px rgba(var(--accentRGB),.1); backdrop-filter: blur(26px); }
+  #detail-modal h2 { font-family: var(--hud); font-size: 14px; letter-spacing: 3px; color: var(--cyan); margin: 0 0 16px; }
+  #detail-modal label { display:block; font-family: var(--hud); font-size: 9px; letter-spacing: 2px; color: var(--muted); margin: 12px 0 5px; }
+  #detail-modal input, #detail-modal select, #detail-modal textarea { width: 100%; background: var(--glass-2); border: 1px solid var(--stroke); border-radius: 11px; color: var(--text); padding: 10px 13px; font-size: 14px; font-family: var(--body); box-sizing: border-box; }
+  #detail-modal textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
+  #detail-modal input:focus, #detail-modal select:focus, #detail-modal textarea:focus { border-color: var(--stroke-2); outline: none; box-shadow: 0 0 16px rgba(var(--accentRGB),.12); }
+  #detail-modal .duo { display: flex; gap: 12px; }
+  #detail-modal .duo > div { flex: 1; }
+  #detail-err { color: #ff6b81; font-size: 12px; margin-top: 8px; min-height: 14px; }
+  .item-edit { cursor: pointer; }
   #pw-modal h2 { color: var(--cyan); font-family: var(--hud); font-size: 12px; letter-spacing: 3px; margin-bottom: 14px; }
   #pw-modal input { width: 100%; background: rgba(3,8,16,.85); border: 1px solid var(--stroke); border-radius: 11px; color: var(--text); padding: 12px 14px; font-size: 15px; outline: none; font-family: var(--body); }
   #pw-modal input:focus { border-color: var(--stroke-2); box-shadow: 0 0 16px rgba(var(--accentRGB),.1); }
@@ -487,9 +499,10 @@
     <label class="check-row"><input type="checkbox" id="s-briefing-speak"> Brifingi sesli de oku</label>
     <label class="check-row"><input type="checkbox" id="s-weather"> Brifingde hava durumunu göster</label>
     <div class="row" style="margin-top:8px">
+      <button class="btn ghost" id="s-detect-loc" type="button">📍 KONUMUMU ALGILA</button>
       <button class="btn ghost" id="s-briefing-test" type="button">🌅 BRİFİNGİ ŞİMDİ DENE</button>
     </div>
-    <div class="hint" id="briefing-status">Hava durumu ücretsiz Open-Meteo ile (API anahtarı gerekmez). Şehir adı yalnızca gösterim; konum enlem/boylamdan alınır (Antalya varsayılan).</div>
+    <div class="hint" id="briefing-status">Hava durumu ücretsiz Open-Meteo ile (API anahtarı gerekmez). <b>📍 Konumumu algıla</b> ile bulunduğun şehir IP'den otomatik doldurulur (kaydetmeyi unutma). Varsayılan Antalya.</div>
 
     <div class="row">
       <button class="btn ghost" id="s-cancel">VAZGEÇ</button>
@@ -508,6 +521,18 @@
     <div class="row">
       <button class="btn ghost" id="pw-cancel">VAZGEÇ</button>
       <button class="btn primary" id="pw-ok">SİL</button>
+    </div>
+  </div>
+</div>
+
+<div id="detail-bg" class="modal-bg-generic">
+  <div id="detail-modal">
+    <h2 id="detail-title">DETAY</h2>
+    <div id="detail-body"></div>
+    <div id="detail-err"></div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn ghost" id="detail-cancel">VAZGEÇ</button>
+      <button class="btn primary" id="detail-save">KAYDET</button>
     </div>
   </div>
 </div>
@@ -925,6 +950,66 @@ $("pw-ok").onclick = async () => {
 };
 $("pw-input").addEventListener("keydown", (e) => { if (e.key === "Enter") $("pw-ok").click(); });
 
+/* ============ DETAY / DÜZENLEME PANELİ ============ */
+let _detail = { type: null, id: null };
+const _catTR = { fact: "Bilgi", goal: "Hedef", preference: "Tercih", project: "Proje" };
+const _recTR = { none: "Tekrar yok", daily: "Her gün", weekly: "Her hafta", monthly: "Her ay", yearly: "Her yıl" };
+function _opt(map, val) { return Object.entries(map).map(([k, v]) => '<option value="' + k + '"' + (k === val ? ' selected' : '') + '>' + v + '</option>').join(''); }
+function _esc(s) { return (s == null ? "" : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function openDetail(type, item) {
+  _detail = { type, id: item.id };
+  $("detail-err").textContent = "";
+  const b = $("detail-body");
+  if (type === "task") {
+    $("detail-title").textContent = "✏️ GÖREV DETAYI";
+    b.innerHTML =
+      '<label>BAŞLIK</label><input id="dt-title" value="' + _esc(item.title) + '">' +
+      '<div class="duo"><div><label>PROJE</label><input id="dt-project" value="' + _esc(item.project) + '"></div>' +
+      '<div><label>ÖNCELİK</label><select id="dt-priority">' + [1, 2, 3, 4, 5].map(n => '<option value="' + n + '"' + (n == item.priority ? ' selected' : '') + '>P' + n + '</option>').join('') + '</select></div></div>' +
+      '<div class="duo"><div><label>SON TARİH</label><input id="dt-due" type="date" value="' + _esc(item.due_date) + '"></div>' +
+      '<div><label>TEKRAR 🔁</label><select id="dt-recur">' + _opt(_recTR, item.recurrence || "none") + '</select></div></div>' +
+      '<label>DURUM</label><select id="dt-status"><option value="open"' + (item.status !== "done" ? " selected" : "") + '>Açık</option><option value="done"' + (item.status === "done" ? " selected" : "") + '>Tamamlandı</option></select>' +
+      '<label>NOT / AÇIKLAMA</label><textarea id="dt-notes">' + _esc(item.notes) + '</textarea>';
+  } else if (type === "memory") {
+    $("detail-title").textContent = "🧠 HAFIZA DETAYI";
+    b.innerHTML =
+      '<label>BİLGİ</label><textarea id="dm-content">' + _esc(item.content) + '</textarea>' +
+      '<div class="duo"><div><label>KATEGORİ</label><select id="dm-category">' + _opt(_catTR, item.category || "fact") + '</select></div>' +
+      '<div><label>PROJE</label><input id="dm-project" value="' + _esc(item.project) + '"></div></div>' +
+      '<label>NOTUM / AÇIKLAMA</label><textarea id="dm-note" placeholder="Bu bilgiyle ilgili kendi notların...">' + _esc(item.note) + '</textarea>';
+  } else if (type === "plan") {
+    $("detail-title").textContent = "📅 PLAN DETAYI";
+    b.innerHTML =
+      '<label>BAŞLIK</label><input id="dp-title" value="' + _esc(item.title) + '">' +
+      '<label>DÖNEM</label><select id="dp-period">' + _opt({ daily: "Günlük", weekly: "Haftalık", monthly: "Aylık", custom: "Özel" }, item.period || "custom") + '</select>' +
+      '<label>İÇERİK</label><textarea id="dp-content" style="min-height:180px">' + _esc(item.content) + '</textarea>';
+  }
+  $("detail-bg").classList.add("show");
+}
+$("detail-cancel").onclick = () => $("detail-bg").classList.remove("show");
+$("detail-save").onclick = async () => {
+  try {
+    let r;
+    if (_detail.type === "task") {
+      r = await window.pywebview.api.update_task_details(_detail.id, {
+        title: $("dt-title").value, project: $("dt-project").value,
+        priority: parseInt($("dt-priority").value), due_date: $("dt-due").value || null,
+        recurrence: $("dt-recur").value, status: $("dt-status").value, notes: $("dt-notes").value });
+    } else if (_detail.type === "memory") {
+      r = await window.pywebview.api.update_memory_details(_detail.id, {
+        content: $("dm-content").value, category: $("dm-category").value,
+        project: $("dm-project").value, note: $("dm-note").value });
+    } else if (_detail.type === "plan") {
+      r = await window.pywebview.api.update_plan_details(_detail.id, {
+        title: $("dp-title").value, period: $("dp-period").value, content: $("dp-content").value });
+    }
+    if (r && !r.ok) { $("detail-err").textContent = r.error || "Kaydedilemedi"; return; }
+    $("detail-bg").classList.remove("show");
+    addActionsNote(["✏️ Güncellendi"]);
+    await refreshState();
+  } catch (e) { $("detail-err").textContent = "Hata: " + e; }
+};
+
 /* ============ GORUNUM / NAV ============ */
 const PANEL_TITLE = { tasks: "GÖREVLER", memory: "HAFIZA BANKASI", plans: "PLANLAR", documents: "BELGE BANKASI", backups: "YEDEKLER", calendar: "TAKVİM", chats: "SOHBET GEÇMİŞİ" };
 function showView(v) {
@@ -1040,13 +1125,16 @@ function renderPanel() {
       cb.type = "checkbox"; cb.checked = t.status === "done";
       cb.onchange = async () => { state = await window.pywebview.api.toggle_task(t.id, cb.checked); renderPanel(); };
       const info = document.createElement("div");
+      info.className = "item-edit"; info.title = "Detay / düzenle";
+      const recTag = (t.recurrence && t.recurrence !== "none") ? "🔁 " : "";
       const meta = [t.project, t.due_date ? "◷ " + t.due_date : null].filter(Boolean).join("  ·  ");
-      info.innerHTML = '<div class="t-title">' + mdLite(t.title) + "</div>" + (meta ? '<div class="t-meta">' + mdLite(meta) + "</div>" : "");
+      info.innerHTML = '<div class="t-title">' + recTag + mdLite(t.title) + "</div>" + (meta ? '<div class="t-meta">' + mdLite(meta) + "</div>" : "");
+      info.onclick = () => openDetail("task", t);
       const pr = document.createElement("span");
       pr.className = "prio p" + t.priority; pr.textContent = "P" + t.priority;
       const del = document.createElement("button");
       del.className = "del-x"; del.title = "Görevi sil"; del.textContent = "🗑";
-      del.onclick = () => manualDelete([], [t.id]);
+      del.onclick = (e) => { e.stopPropagation(); manualDelete([], [t.id]); };
       d.appendChild(cb); d.appendChild(info); info.style.flex = "1"; d.appendChild(pr); d.appendChild(del);
       p.appendChild(d);
     });
@@ -1059,11 +1147,13 @@ function renderPanel() {
       g.innerHTML = '<div class="branch">◈ ' + mdLite(proj).toUpperCase() + "</div>";
       state.memory_tree[proj].forEach((m) => {
         const leaf = document.createElement("div");
-        leaf.className = "mem-leaf";
-        leaf.innerHTML = mdLite(m.content) + ' <span class="cat">[' + m.category + "]</span>";
+        leaf.className = "mem-leaf item-edit"; leaf.title = "Detay / düzenle";
+        const noteMark = (m.note && m.note.trim()) ? ' 📝' : '';
+        leaf.innerHTML = mdLite(m.content) + ' <span class="cat">[' + m.category + "]" + noteMark + "</span>";
+        leaf.onclick = () => openDetail("memory", m);
         const del = document.createElement("button");
         del.className = "del-x"; del.title = "Bu hafızayı sil"; del.textContent = "🗑";
-        del.onclick = () => manualDelete([m.id], []);
+        del.onclick = (e) => { e.stopPropagation(); manualDelete([m.id], []); };
         leaf.appendChild(del);
         g.appendChild(leaf);
       });
@@ -1145,9 +1235,13 @@ function renderPanel() {
       d.className = "plan-item";
       d.innerHTML = '<div class="p-head"><div class="p-title">▸ ' + mdLite(pl.title) + '</div></div><div class="p-meta">' + pl.period + " · " + pl.created_at + '</div><div class="p-body">' + mdLite(pl.content) + "</div>";
       d.querySelector(".p-title").onclick = () => d.classList.toggle("open");
+      const edit = document.createElement("button");
+      edit.className = "del-x"; edit.title = "Planı düzenle"; edit.textContent = "✏️";
+      edit.onclick = (e) => { e.stopPropagation(); openDetail("plan", pl); };
       const del = document.createElement("button");
       del.className = "del-x"; del.title = "Bu planı sil"; del.textContent = "🗑";
       del.onclick = (e) => { e.stopPropagation(); manualDeletePlan(pl.id); };
+      d.querySelector(".p-head").appendChild(edit);
       d.querySelector(".p-head").appendChild(del);
       p.appendChild(d);
     });
@@ -1169,9 +1263,28 @@ function renderCalendar(p) {
   const startDow = (first.getDay() + 6) % 7;        // Pazartesi = 0
   const days = new Date(y, m + 1, 0).getDate();
   const todayStr = _ymd(new Date());
-  // Görevleri güne göre grupla (son tarihe göre)
+  // Görevleri güne göre grupla. Tekrarlayan görevler (🔁) bu ayın TÜM tekrar
+  // günlerinde gösterilir (Apple Takvim gibi).
   const byDay = {};
-  (state.tasks || []).forEach((t) => { if (t.due_date) (byDay[t.due_date] = byDay[t.due_date] || []).push(t); });
+  const addTo = (ds, t) => { (byDay[ds] = byDay[ds] || []).push(t); };
+  (state.tasks || []).forEach((t) => {
+    if (!t.due_date) return;
+    addTo(t.due_date, t);
+    const rec = t.recurrence;
+    if (!rec || rec === "none") return;
+    const anchor = new Date(t.due_date + "T00:00:00");
+    if (isNaN(anchor)) return;
+    for (let d = 1; d <= days; d++) {
+      const cur = new Date(y, m, d);
+      if (cur <= anchor) continue;                 // çapadan önce/aynı gün zaten eklendi
+      let hit = false;
+      if (rec === "daily") hit = true;
+      else if (rec === "weekly") hit = cur.getDay() === anchor.getDay();
+      else if (rec === "monthly") hit = cur.getDate() === anchor.getDate();
+      else if (rec === "yearly") hit = cur.getDate() === anchor.getDate() && cur.getMonth() === anchor.getMonth();
+      if (hit) addTo(_ymd(cur), { ...t, _recurring: true });
+    }
+  });
 
   const head = document.createElement("div"); head.className = "cal-head";
   head.innerHTML = '<button class="cal-nav" id="cal-prev">‹</button><div class="cal-title">' + AY_ADI[m] + " " + y + '</div><button class="cal-nav" id="cal-next">›</button>' +
@@ -1194,7 +1307,8 @@ function renderCalendar(p) {
     let html = '<div class="cal-num">' + d + "</div>";
     const items = (byDay[ds] || []).slice(0, 3);
     items.forEach((t) => {
-      html += '<div class="cal-task' + (t.status === "done" ? " done" : "") + '" title="' + (t.title || "").replace(/"/g, "") + '"><i style="background:' + _prioColor(t.priority) + '"></i>' + mdLite(t.title).slice(0, 22) + "</div>";
+      const rmark = (t._recurring || (t.recurrence && t.recurrence !== "none")) ? '🔁 ' : '';
+      html += '<div class="cal-task' + (t.status === "done" ? " done" : "") + '" title="' + (t.title || "").replace(/"/g, "") + '"><i style="background:' + _prioColor(t.priority) + '"></i>' + rmark + mdLite(t.title).slice(0, 20) + "</div>";
     });
     const extra = (byDay[ds] || []).length - items.length;
     if (extra > 0) html += '<div class="cal-more">+' + extra + " daha</div>";
@@ -1337,6 +1451,20 @@ $("s-briefing-test").onclick = async () => {
   try {
     const r = await window.pywebview.api.run_briefing_now();
     $("briefing-status").innerHTML = r.ok ? "✅ Brifing çalıştırıldı (sohbete eklendi)." : "⚠️ " + (r.error || "brifing başarısız");
+  } catch (e) { $("briefing-status").innerHTML = "⚠️ Hata: " + e; }
+};
+$("s-detect-loc").onclick = async () => {
+  $("briefing-status").innerHTML = "📍 Konum algılanıyor...";
+  try {
+    const r = await window.pywebview.api.detect_location();
+    if (r.ok && r.location) {
+      $("s-weather-city").value = r.location.city || "";
+      $("s-weather-lat").value = r.location.lat;
+      $("s-weather-lon").value = r.location.lon;
+      $("briefing-status").innerHTML = "✅ Konum bulundu: <b>" + (r.location.city || "?") + "</b> — <b>KAYDET</b>'e basmayı unutma.";
+    } else {
+      $("briefing-status").innerHTML = "⚠️ Konum algılanamadı (internet/VPN?). Elle girebilirsin.";
+    }
   } catch (e) { $("briefing-status").innerHTML = "⚠️ Hata: " + e; }
 };
 $("s-export").onclick = async () => {

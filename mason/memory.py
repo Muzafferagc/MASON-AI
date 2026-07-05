@@ -14,6 +14,36 @@ from .embeddings import embed_text, cosine_similarity
 
 VALID_CATEGORIES = {"project", "goal", "preference", "fact"}
 
+
+def update_memory(memory_id: int, content: str | None = None,
+                  category: str | None = None, project: str | None = None,
+                  note: str | None = None, config: dict | None = None) -> None:
+    """Bir hafizayi duzenler (detay panelinden). content degisirse embedding
+    yeniden uretilir. note = kullanicinin ekledigi serbest aciklama."""
+    fields: dict = {}
+    if content is not None and str(content).strip():
+        fields["content"] = content.strip()
+    if category is not None:
+        fields["category"] = category if category in VALID_CATEGORIES else "fact"
+    if project is not None:
+        fields["project"] = project.strip() or None
+    if note is not None:
+        fields["note"] = note
+    if not fields:
+        return
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE memories SET {set_clause} WHERE id = ?",
+            (*fields.values(), memory_id),
+        )
+    if "content" in fields and config:
+        emb = embed_text(fields["content"], config)
+        if emb:
+            with get_conn() as conn:
+                conn.execute("UPDATE memories SET embedding = ? WHERE id = ?",
+                             (json.dumps(emb), memory_id))
+
 # Bu sayiya kadar hafiza varsa arama yapmadan HEPSI prompt'a konur
 SEMANTIC_SEARCH_THRESHOLD = 40
 # Anlamsal arama actiginda prompt'a konacak hafiza sayisi

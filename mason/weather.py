@@ -27,6 +27,37 @@ def describe_code(code: int) -> tuple[str, str]:
     return _WMO.get(int(code), ("değişken", "🌡️"))
 
 
+def detect_location() -> dict | None:
+    """IP adresine gore GERCEK konumu (sehir + enlem/boylam) otomatik bulur.
+    Ucretsiz, API anahtari gerekmez. Basarisizsa None doner.
+    (VPN/proxy kullaniyorsan IP'nin gosterdigi sehri verir.)"""
+    # 1) ipapi.co (HTTPS, ucretsiz)
+    try:
+        r = requests.get("https://ipapi.co/json/", timeout=10)
+        if r.status_code == 200:
+            d = r.json()
+            if d.get("latitude") is not None and d.get("city"):
+                return {"city": d.get("city"),
+                        "lat": float(d["latitude"]), "lon": float(d["longitude"]),
+                        "region": d.get("region"), "country": d.get("country_name")}
+    except Exception:
+        pass
+    # 2) ip-api.com (yedek)
+    try:
+        r = requests.get(
+            "http://ip-api.com/json/?fields=status,city,regionName,country,lat,lon",
+            timeout=10)
+        if r.status_code == 200:
+            d = r.json()
+            if d.get("status") == "success" and d.get("lat") is not None:
+                return {"city": d.get("city"),
+                        "lat": float(d["lat"]), "lon": float(d["lon"]),
+                        "region": d.get("regionName"), "country": d.get("country")}
+    except Exception:
+        pass
+    return None
+
+
 def get_weather(config: dict) -> dict | None:
     """Anlik hava durumunu dondurur veya None (internet yok / hata).
     Donen: {city, temp, code, desc, emoji, tmin, tmax}."""

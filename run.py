@@ -457,8 +457,46 @@ class Api:
         }
 
     def toggle_task(self, task_id: int, done: bool) -> dict:
-        planner.update_task(int(task_id), status="done" if done else "open")
+        # Tekrarlayan gorev tamamlanirsa sonraki tarih otomatik olusur
+        if done:
+            planner.complete_task(int(task_id))
+        else:
+            planner.update_task(int(task_id), status="open")
         return self.get_state()
+
+    # ---- Detay / duzenleme paneli ----
+    def update_task_details(self, task_id: int, fields: dict) -> dict:
+        """Gorev detaylarini gunceller (baslik/proje/oncelik/tarih/tekrar/not/durum)."""
+        try:
+            f = {k: v for k, v in (fields or {}).items() if k in
+                 ("title", "project", "priority", "due_date", "status", "notes",
+                  "recurrence")}
+            planner.update_task(int(task_id), **f)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def update_memory_details(self, memory_id: int, fields: dict) -> dict:
+        """Hafiza detaylarini gunceller (icerik/kategori/proje/not)."""
+        try:
+            f = fields or {}
+            memory.update_memory(
+                int(memory_id), content=f.get("content"),
+                category=f.get("category"), project=f.get("project"),
+                note=f.get("note"), config=load_config())
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def update_plan_details(self, plan_id: int, fields: dict) -> dict:
+        """Plan detaylarini gunceller (baslik/donem/icerik)."""
+        try:
+            f = fields or {}
+            planner.update_plan(int(plan_id), title=f.get("title"),
+                                period=f.get("period"), content=f.get("content"))
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     # ---- Ayarlar ----
     def get_settings(self) -> dict:
@@ -577,6 +615,11 @@ class Api:
         """Anlik hava durumu (takvim/ayar onizlemesi icin)."""
         w = weather.get_weather(load_config())
         return {"ok": bool(w), "weather": w}
+
+    def detect_location(self) -> dict:
+        """IP'den gercek konumu bulur (Ayarlar'daki 'Konumumu algıla' butonu)."""
+        loc = weather.detect_location()
+        return {"ok": bool(loc), "location": loc}
 
     def export_ics(self) -> dict:
         """Son tarihli gorevleri .ics takvim dosyasi olarak 'disari_aktar/'

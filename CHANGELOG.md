@@ -12,6 +12,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Sürümleme / Version
 
 ## [Unreleased] — Yayınlanmadı
 
+### Düzeltildi (KRİTİK — görev ekleme sessizce bozuktu)
+- **`agent.py` tekrar (recurrence) için `planner.add_task`'ı 6 argümanla çağırıyordu ama `planner.py` hâlâ 5 argüman kabul ediyordu** → her `add_task` çağrısı `TypeError` fırlatıp sessizce yutuluyordu, yani sohbetten görev ekleme çalışmıyordu. `planner.py` tamamlandı; artık `recurrence` parametresi ve tamamlanınca sonraki tekrarı oluşturan `complete_task` var. Eski veritabanlarına `tasks.recurrence` ve `memories.note` sütunları güvenli göç ile eklendi.
+
+### Eklendi (Faz 8 — Apple tarzı yineleme, doğallık, detay paneli)
+- **Tekrar eden hatırlatıcılar (Apple Reminders gibi):** "her gün / her hafta / her ayın 8'inde / her yıl" dediğinde görev yinelenir olarak kaydedilir (recurrence). Tamamlanınca (kutucuğu işaretleyince) otomatik olarak **sonraki tarih** için yeni görev oluşur. Ay sonları akıllıca kırpılır (31 Ocak +1 ay → 28 Şubat). Takvimde tekrar günlerinin hepsi 🔁 ile gösterilir; görev listesinde de 🔁 rozeti.
+- **Detay / düzenleme paneli:** Hafıza, görev veya plana **tıklayınca** (planlarda ✏️) detay penceresi açılır; başlık, proje, öncelik, tarih, tekrar, durum, kategori ve **serbest not/açıklama** düzenlenebilir. Hafızaya kullanıcı notu alanı eklendi (📝 ile işaretlenir).
+- **Konumumu algıla:** Ayarlar'da 📍 buton, IP'den bulunduğun gerçek şehri + koordinatı otomatik doldurur (ücretsiz, anahtarsız). Artık hava/konum için Antalya varsayılanına takılı kalmazsın.
+
+### Düzeltildi (doğallık & gerçekçilik — sistem promptu)
+- **Boş/uydurma görev & plan:** Model bazen boş başlıklı görev/plan üretip kaydediyordu → `execute_actions` artık boş içerikli remember/add_task/save_plan'ı **reddediyor**; prompt da "istenmeden görev/plan oluşturma, boş şey kaydetme" diye netleştirildi.
+- **"Kaydet" derken silme şifresi çıkması:** Küçük model kaydet isteğinde yanlışlıkla silme aksiyonu üretiyordu → silme aksiyonları artık **yalnızca kullanıcı mesajında gerçek silme niyeti** ("sil/unut/kaldır/temizle") varsa uygulanıyor.
+- **Bilmediği konumu iddia etme:** Prompta "GPS'in/canlı konumun yok; hafızada yazmıyorsa şehir/hava iddia etme, bilmiyorsan söyle" kuralı eklendi.
+- **Doğal Türkçe + kalıcı hafıza:** Prompt daha sıcak/doğal konuşacak, kimlik/şehir/tercih gibi kalıcı bilgileri proaktif olarak hafızaya kaydedecek (böylece diğer sohbetlerde de seni bilir) şekilde yeniden yazıldı. Robotik/çeviri kokan ifadeler ("Hangi görevde oluyorum" gibi) engellendi.
+
+### Not (Ollama mantık hataları)
+- Küçük yerel model (`llama3.2` 3B) Türkçede ve talimat takibinde zayıftır; yukarıdaki doğrulama + prompt iyileştirmeleri en kötü davranışları engeller ama en tutarlı sonuç için **Gemini** ya da daha büyük yerel model (`qwen2.5:7b`+) önerilir.
+
 ### Düzeltildi (KRİTİK — "no such column: conversation_id")
 - **Mevcut veritabanında her mesaj/yeni sohbet hata veriyordu:** Sohbet geçmişi için eklenen `CREATE INDEX ... ON messages(conversation_id)` satırı SCHEMA içindeydi ve `executescript` sırasında **migrasyon sütunu eklemeden ÖNCE** çalışıyordu. Eski `mason.db`'de `messages` tablosu var ama `conversation_id` sütunu henüz olmadığından index oluşturma her `get_conn` çağrısında çöküyor, migrasyon hiç çalışamıyor, sütun hiç eklenemiyordu → mesaj gönderme, yeni sohbet, hafıza, görev dahil DB'ye dokunan her şey "no such column: conversation_id" veriyordu. **Çözüm:** index artık SCHEMA'dan çıkarıldı; `_migrate()` içinde, sütun kesin eklendikten sonra oluşturuluyor (ayrıca `commit()` ile Python 3.12+/3.14 sqlite davranışına karşı kesinleştirildi). Eski veritabanı sorunsuz göç ediyor; eski mesajlar "Önceki sohbet" olarak korunuyor.
 

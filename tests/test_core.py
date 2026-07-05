@@ -283,4 +283,58 @@ llm_module.requests.post = _real_post
 llm_module.requests.get = _real_get
 emb_module.requests.post = _real_post
 
+# ---------- Faz 4: Belge yukleme + RAG ----------
+from mason import documents as docs
+
+# Uzanti -> tur / desteklenirlik
+check("belge: pdf turu", docs.filetype_of("a.PDF") == "pdf")
+check("belge: word turu", docs.filetype_of("rapor.docx") == "word")
+check("belge: gorsel turu", docs.filetype_of("foto.jpeg") == "image")
+check("belge: ses turu", docs.filetype_of("kayit.mp3") == "audio")
+check("belge: kod metin sayilir", docs.filetype_of("main.py") == "text")
+check("belge: desteklenen tur", docs.is_supported("x.pdf") and docs.is_supported("y.csv"))
+check("belge: desteklenmeyen tur", not docs.is_supported("x.exe"))
+
+# Parcalama (chunking)
+_short = docs.chunk_text("kisa metin")
+check("chunk: kisa metin tek parca", len(_short) == 1)
+_long = docs.chunk_text("cumle. " * 800)  # ~5600 karakter
+check("chunk: uzun metin bolunur", len(_long) > 1)
+check("chunk: bos metin bos liste", docs.chunk_text("   ") == [])
+check("chunk: parcalar ust uste biner (baglam korunur)",
+      all(len(c) <= docs.CHUNK_SIZE + 50 for c in _long))
+
+# Metin dosyasi yukleme (embedding'siz: config=None -> ag gerekmez)
+_tmpf = Path(tempfile.mkdtemp()) / "ders_notu.txt"
+_tmpf.write_text("MASON projesi Muzaffer'in kisisel yapay zeka asistanidir. "
+                 "Gemini ve Ollama kullanir. " * 60, encoding="utf-8")
+_res = docs.ingest(str(_tmpf), config=None)
+check("ingest: metin dosyasi islenir", _res["ok"] and _res["chunks"] >= 1)
+check("ingest: belge listelenir", len(docs.list_documents()) == 1)
+_doc = docs.list_documents()[0]
+check("ingest: dogru dosya adi", _doc["filename"] == "ders_notu.txt")
+check("ingest: onizleme uretilir", bool(_doc["summary"]))
+
+# Desteklenmeyen / eksik dosya
+check("ingest: desteklenmeyen tur reddedilir",
+      docs.ingest(str(Path(tempfile.mkdtemp()) / "a.exe"), None)["ok"] is False)
+check("ingest: olmayan dosya reddedilir",
+      docs.ingest("/yok/olmayan_dosya.pdf", None)["ok"] is False)
+
+# Retrieval / prompt
+_ctx = docs.format_for_prompt(query="MASON nedir", config=None)
+check("retrieval: ilgili parca prompt'a girer", "MASON" in _ctx)
+check("retrieval: kaynak dosya adi belirtilir", "ders_notu.txt" in _ctx)
+check("retrieval: parca sinirlanir", len(docs.relevant_chunks(None, None)) <= docs.TOP_CHUNKS)
+
+# Silme (parcalar da silinir)
+docs.delete_document(_doc["id"])
+check("belge silme: belge kalkar", len(docs.list_documents()) == 0)
+check("belge silme: parcalar da kalkar", len(docs._all_chunks()) == 0)
+check("belge yokken prompt bos", docs.format_for_prompt("x", None) == "")
+
+# Agent prompt sablonu belge yerini icermeli
+check("agent: prompt sablonu {documents} placeholder'i icerir",
+      "{documents}" in agent.SYSTEM_PROMPT_TEMPLATE)
+
 print(f"\nTUM TESTLER GECTI ({passed}/{passed})")

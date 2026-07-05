@@ -18,6 +18,10 @@ __pycache__/
 # Calisma / gecici dosyalar
 .show.trigger
 
+# Hafiza yedekleri ve yuklenen belgeler (kisisel dosyalar)
+yedekler/
+belgeler/
+
 # Sanal ortam (varsa)
 venv/
 .venv/
@@ -28,3 +32,6 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 GITHUB_REHBERI.md
+
+# Kisisel hatirlatma listesi (gizli)
+HATIRLATMALAR.md

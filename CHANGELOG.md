@@ -12,6 +12,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Sürümleme / Version
 
 ## [Unreleased] — Yayınlanmadı
 
+### Eklendi (Faz 4 — Dosya yükleme + Belge hafızası / RAG)
+- **Her türden dosya yükleme (ChatGPT/Gemini gibi):** Dock'a 📎 butonu ve tüm ekranı kaplayan **sürükle-bırak** katmanı eklendi. Desteklenen türler: PDF, Word (.docx), Excel (.xlsx/.csv), metin & kod (.txt/.md/.py/.js…), **görsel** (.png/.jpg…) ve **ses** (.mp3/.wav…). Desteklenmeyen tür/eksik kütüphane sessizce atlanır, uygulama asla çökmez.
+- **İçerik çıkarma:** PDF → `pypdf`, Word → `python-docx`, Excel → `openpyxl`, metin/kod/CSV → doğrudan (kodlama tahminiyle), **görsel → Gemini "görü" (vision/OCR)**, **ses → faster-whisper** (Faz 2 altyapısı). Hiçbiri için zorunlu kurulum yok; kurulu olmayan tür için bilgilendirici mesaj döner.
+- **Optimum veri toplama (RAG):** Her belge anlamlı **parçalara** bölünür (~1200 karakter, üst üste binen), her parçaya **embedding** çıkarılır. Soru sorduğunda 100 sayfalık bir PDF'in tamamı değil, soruyla anlamca **en ilgili 5-8 parça** prompt'a girer (`documents.format_for_prompt`) — hem hızlı hem Gemini kotası dostu. Kaynak dosya adı yanıt bağlamında belirtilir.
+- **BELGELER paneli:** Dock'ta yeni sekme; yüklü belgeler tür ikonu, boyut, parça sayısı, tarih ve önizleme ile listelenir. Her belgede 🗑 silme butonu (şifre koruması aktifse onay penceresinden geçer; belge + parçaları birlikte silinir).
+- **Belgeler kalıcıdır:** Sohbet kapansa da hafızada kalır; Mason belgeden kalıcı bir bilgi/hedef öğrenirse proaktif olarak `remember` ile kaydeder.
+- **Yeni:** `mason/documents.py` modülü; `documents` + `doc_chunks` DB tabloları; `api.upload_files` (yerel dosya seçici), `api.upload_blob` (sürükle-bırak base64 yedeği), `api.delete_document`, `api.list_documents`. Yüklenen dosyalar `belgeler/` klasörüne kopyalanır (gitignore'da). requirements.txt'e `pypdf`, `python-docx`, `openpyxl` eklendi.
+- **Testler:** `tests/test_core.py`'ye 28 belge testi eklendi (tür tespiti, parçalama, ingest, retrieval, silme, hatalı dosyada çökmeme) — tümü geçti.
+
 ### Düzeltildi (silme güvenliği)
 - **"Fitness'ı sil" deyince TÜM hafıza siliniyordu:** Sistem promptuna sert SİLME KURALLARI eklendi — `clear_memory` yalnızca kullanıcı açıkça "tüm hafızayı sil" derse kullanılabilir; belirli bir konu için ilgili `#id`'lerle `forget` zorunlu. (Küçük yerel modeller bu kuralı ihlal etmeye meyilliydi.)
 - **Görev silme şifre onayından geçmiyordu:** `delete_task` ve yeni `clear_tasks` aksiyonları da artık şifre korumasına dahil — onay penceresi açılır, şifre doğruysa siler. Onay penceresi artık NE silineceğini de yazar ("Silinecek: 2 hafıza + 1 görev").

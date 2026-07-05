@@ -5,7 +5,10 @@ Calistirmak icin:  python run.py   (konsolsuz: pythonw run.py)
 Argumanlar:
     --show   Pencereyi gizli baslatma ayarina ragmen goster (masaustu "Ac" simgesi).
 """
+import base64
 import json
+import re
+import shutil
 import socket
 import sys
 import threading
@@ -14,13 +17,14 @@ from pathlib import Path
 
 import webview
 
-from mason import agent, memory, planner, reminders, voice, wakeword
+from mason import agent, documents, memory, planner, reminders, voice, wakeword
 from mason.config import load_config, save_config
 from mason.database import get_conn
 
 BASE_DIR = Path(__file__).resolve().parent
 UI_FILE = BASE_DIR / "ui" / "index.html"
 BACKUP_DIR = BASE_DIR / "yedekler"       # hafiza yedeklerinin (JSON) tutuldugu klasor
+DOCS_DIR = BASE_DIR / "belgeler"         # yuklenen dosyalarin kopyalandigi klasor
 SHOW_FLAG = BASE_DIR / ".show.trigger"   # arka plandaki ornegi one getirme sinyali
 LOCK_PORT = 50573                         # tek ornek kilidi (localhost)
 
@@ -48,6 +52,25 @@ def _is_speaking() -> bool:
 
 def _speaking_text() -> str:
     return _last_reply_text
+
+
+def _safe_name(name: str) -> str:
+    """Dosya adini guvenli hale getirir (yol/karakter enjeksiyonunu onler)."""
+    name = Path(name or "dosya").name
+    name = re.sub(r'[^\w.\- ğüşıöçĞÜŞİÖÇ]', "_", name).strip() or "dosya"
+    return name[:120]
+
+
+def _unique_path(path: Path) -> Path:
+    """Ayni adli dosya varsa sonuna sayi ekleyerek benzersiz yol uretir."""
+    if not path.exists():
+        return path
+    stem, suffix, i = path.stem, path.suffix, 1
+    while True:
+        cand = path.with_name(f"{stem}_{i}{suffix}")
+        if not cand.exists():
+            return cand
+        i += 1
 
 
 class Api:
@@ -154,6 +177,91 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ---- Belgeler (dosya yukleme + RAG) ----
+    def upload_files(self) -> dict:
+        """Yerel dosya secme penceresini acar (tum turler, coklu secim);
+        secilen her dosyayi 'belgeler/' klasorune kopyalar, icerigini
+        cikarip parcalayarak belge hafizasina kaydeder."""
+        try:
+            paths = window.create_file_dialog(
+                webview.OPEN_DIALOG, allow_multiple=True,
+                file_types=("Tüm dosyalar (*.*)",),
+            )
+        except Exception as e:
+            return {"ok": False, "error": f"Dosya seçici açılamadı: {e}"}
+        if not paths:
+            return {"ok": False, "cancelled": True}
+        return self._ingest_paths(list(paths))
+
+    def upload_blob(self, name: str, content_b64: str) -> dict:
+        """Surukle-birak yedegi: dosya icerigi base64 olarak gelir; diske
+        yazip ayni sekilde islenir (yol alinamayan platformlar icin)."""
+        try:
+            raw = base64.b64decode((content_b64 or "").split(",")[-1])
+        except Exception as e:
+            return {"ok": False, "error": f"Dosya çözülemedi: {e}"}
+        DOCS_DIR.mkdir(exist_ok=True)
+        safe = _safe_name(name or "dosya")
+        dest = _unique_path(DOCS_DIR / safe)
+        try:
+            dest.write_bytes(raw)
+        except Exception as e:
+            return {"ok": False, "error": f"Dosya kaydedilemedi: {e}"}
+        cfg = load_config()
+        res = documents.ingest(str(dest), cfg, stored_path=str(dest))
+        if not res.get("ok"):
+            try:
+                dest.unlink()
+            except OSError:
+                pass
+        return {"ok": bool(res.get("ok")), "results": [res],
+                "added": 1 if res.get("ok") else 0}
+
+    def _ingest_paths(self, paths: list) -> dict:
+        """Verilen dosya yollarini 'belgeler/'e kopyalayip belge hafizasina isler."""
+        DOCS_DIR.mkdir(exist_ok=True)
+        cfg = load_config()
+        results, added = [], 0
+        for src in paths:
+            src = str(src)
+            name = Path(src).name
+            if not documents.is_supported(src):
+                results.append({"ok": False, "filename": name,
+                                "error": f"Desteklenmeyen tür: {Path(src).suffix}"})
+                continue
+            dest = _unique_path(DOCS_DIR / _safe_name(name))
+            try:
+                shutil.copy2(src, dest)
+                stored = str(dest)
+            except Exception:
+                stored = src  # kopyalanamazsa orijinalden oku
+            res = documents.ingest(stored, cfg, stored_path=stored)
+            if res.get("ok"):
+                added += 1
+            elif stored != src and Path(stored).exists():
+                try:
+                    Path(stored).unlink()
+                except OSError:
+                    pass
+            results.append(res)
+        return {"ok": added > 0, "added": added, "count": len(paths),
+                "results": results}
+
+    def list_documents(self) -> list:
+        return documents.list_documents()
+
+    def delete_document(self, doc_id: int, password: str = "") -> dict:
+        """Bir belgeyi siler. Silme sifresi ayarliysa dogru sifre gerekir."""
+        cfg = load_config()
+        real = cfg.get("memory_password", "")
+        if real and (password or "") != real:
+            return {"ok": False, "error": "Şifre yanlış"}
+        try:
+            documents.delete_document(int(doc_id))
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ---- Hatirlaticilar ----
     def due_reminders(self) -> dict:
         """Yaklasan/geciken gorevler icin kisa hatirlatma metni (yoksa bos)."""
@@ -168,6 +276,7 @@ class Api:
             "tasks": planner.list_tasks("all"),
             "memory_tree": memory.memory_tree(),
             "plans": planner.list_plans(),
+            "documents": documents.list_documents(),
         }
 
     def toggle_task(self, task_id: int, done: bool) -> dict:

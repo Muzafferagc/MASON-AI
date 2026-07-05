@@ -185,6 +185,30 @@
   .plan-item .p-meta { font-size: 10.5px; color: var(--muted); margin: 4px 0 6px; font-family: var(--mono); }
   .plan-item .p-body { font-size: 13.5px; white-space: pre-wrap; display: none; line-height: 1.6; }
   .plan-item.open .p-body { display: block; }
+  /* ---- Belgeler ---- */
+  .doc-item { background: var(--glass); border: 1px solid var(--stroke); border-radius: 13px; padding: 12px 14px; margin-bottom: 10px; animation: msgIn .3s; backdrop-filter: blur(12px); transition: .25s; }
+  .doc-item:hover { border-color: var(--stroke-2); background: rgba(var(--accentRGB),.05); }
+  .doc-head { display: flex; align-items: center; gap: 12px; }
+  .doc-ic { font-size: 22px; line-height: 1; filter: drop-shadow(0 0 8px rgba(var(--accentRGB),.3)); }
+  .doc-info { flex: 1; min-width: 0; }
+  .doc-item .d-title { font-size: 14px; font-weight: 500; word-break: break-word; }
+  .doc-item .d-meta { font-size: 10.5px; color: var(--muted); margin-top: 3px; font-family: var(--mono); }
+  .doc-item .d-preview { font-size: 12px; color: var(--muted); margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--stroke); line-height: 1.5; max-height: 54px; overflow: hidden; }
+  /* ---- Surukle-birak katmani ---- */
+  #dropzone { position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center; background: rgba(4,7,13,.72); backdrop-filter: blur(6px); }
+  #dropzone.show { display: flex; animation: msgIn .18s; }
+  #dz-inner { pointer-events: none; text-align: center; padding: 60px 80px; border: 2px dashed var(--stroke-2); border-radius: 26px; background: rgba(var(--accentRGB),.05); box-shadow: 0 0 60px rgba(var(--accentRGB),.15) inset; }
+  #dz-ic { font-size: 54px; filter: drop-shadow(0 0 18px rgba(var(--accentRGB),.6)); }
+  #dz-txt { font-family: var(--hud); font-size: 16px; letter-spacing: 5px; color: var(--cyan); margin-top: 18px; text-shadow: 0 0 16px rgba(var(--accentRGB),.5); }
+  #dz-sub { font-family: var(--mono); font-size: 10px; letter-spacing: 2px; color: var(--muted); margin-top: 10px; }
+  /* ---- Bildirim (toast) ---- */
+  #toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%) translateY(20px); z-index: 55; max-width: 560px; opacity: 0; pointer-events: none;
+    padding: 13px 20px; border-radius: 14px; font-size: 13px; line-height: 1.5; font-family: var(--body); text-align: center;
+    background: var(--glass-2); border: 1px solid var(--stroke-2); backdrop-filter: blur(20px); color: var(--text); box-shadow: 0 10px 40px rgba(0,0,0,.45); transition: opacity .3s, transform .3s; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.ok { border-color: rgba(80,230,160,.5); }
+  #toast.err { border-color: rgba(255,107,129,.55); }
+  #toast.work { border-color: var(--stroke-2); }
   .empty { color: var(--muted); font-size: 10px; text-align: center; margin-top: 50px; line-height: 2.2; letter-spacing: 1.5px; font-family: var(--hud); }
 
   /* ================= FLOATING DOCK ================= */
@@ -294,12 +318,17 @@
     <button class="nav-btn" data-view="tasks">GÖREVLER<span class="cnt" id="c-task"></span></button>
     <button class="nav-btn" data-view="memory">HAFIZA<span class="cnt" id="c-mem"></span></button>
     <button class="nav-btn" data-view="plans">PLANLAR<span class="cnt" id="c-plan"></span></button>
+    <button class="nav-btn" data-view="documents">BELGELER<span class="cnt" id="c-doc"></span></button>
     <div class="dock-sep"></div>
+    <button class="act-btn" id="upload-btn" title="Dosya yükle (PDF, Word, Excel, görsel, ses, kod...)">📎</button>
     <button class="act-btn" id="voice-toggle" title="Sesli yanıt aç/kapat">🔊</button>
     <button class="act-btn sm" id="clear-btn" title="Yeni sohbet (hafıza ve görevler silinmez)">⌦ YENİ</button>
     <button class="act-btn" id="settings-btn" title="Ayarlar">⚙</button>
   </div>
 </div>
+
+<div id="dropzone"><div id="dz-inner"><div id="dz-ic">📎</div><div id="dz-txt">DOSYALARI BURAYA BIRAK</div><div id="dz-sub">PDF · WORD · EXCEL · GÖRSEL · SES · KOD</div></div></div>
+<div id="toast"></div>
 
 <div id="modal-bg">
   <div id="modal">
@@ -719,16 +748,17 @@ window.masonReminder = (text) => { if (text) addActionsNote(["⏰ " + text]); };
 
 /* ============ SILME ONAYI (hafiza + gorev, sifre korumali) ============ */
 let hasDeletePw = false;
-let _pendingDel = { mems: [], tasks: [] };
+let _pendingDel = { mems: [], tasks: [], docs: [] };
 
 function _delSummary() {
   const parts = [];
   if (_pendingDel.mems.length) parts.push(_pendingDel.mems.length + " hafıza");
   if (_pendingDel.tasks.length) parts.push(_pendingDel.tasks.length + " görev");
+  if (_pendingDel.docs.length) parts.push(_pendingDel.docs.length + " belge");
   return parts.join(" + ");
 }
-function openDeleteConfirm(memIds, taskIds) {
-  _pendingDel = { mems: (memIds || []).slice(), tasks: (taskIds || []).slice() };
+function openDeleteConfirm(memIds, taskIds, docIds) {
+  _pendingDel = { mems: (memIds || []).slice(), tasks: (taskIds || []).slice(), docs: (docIds || []).slice() };
   $("pw-detail").textContent = "Silinecek: " + _delSummary();
   $("pw-input").value = ""; $("pw-err").textContent = "";
   $("pw-modal-bg").classList.add("show");
@@ -737,36 +767,49 @@ function openDeleteConfirm(memIds, taskIds) {
 function checkPendingForget(res) {
   const m = (res && res.pending_forget) || [];
   const t = (res && res.pending_tasks) || [];
-  if (m.length || t.length) openDeleteConfirm(m, t);
+  if (m.length || t.length) openDeleteConfirm(m, t, []);
 }
 /* Sekmelerdeki manuel silme: sifre varsa onay penceresi, yoksa direkt */
 async function manualDelete(memIds, taskIds) {
-  if (hasDeletePw) { openDeleteConfirm(memIds, taskIds); return; }
+  if (hasDeletePw) { openDeleteConfirm(memIds, taskIds, []); return; }
   await window.pywebview.api.apply_delete(memIds || [], taskIds || [], "");
   await refreshState();
 }
-$("pw-cancel").onclick = () => { _pendingDel = { mems: [], tasks: [] }; $("pw-modal-bg").classList.remove("show"); addActionsNote(["🔒 Silme iptal edildi"]); };
+async function manualDeleteDoc(docId) {
+  if (hasDeletePw) { openDeleteConfirm([], [], [docId]); return; }
+  await window.pywebview.api.delete_document(docId, "");
+  addActionsNote(["🗑️ Belge silindi"]);
+  await refreshState();
+}
+$("pw-cancel").onclick = () => { _pendingDel = { mems: [], tasks: [], docs: [] }; $("pw-modal-bg").classList.remove("show"); addActionsNote(["🔒 Silme iptal edildi"]); };
 $("pw-ok").onclick = async () => {
   const pw = $("pw-input").value;
   try {
-    const r = await window.pywebview.api.apply_delete(_pendingDel.mems, _pendingDel.tasks, pw);
-    if (r.ok) {
-      $("pw-modal-bg").classList.remove("show");
-      const parts = [];
-      if (r.mem_count) parts.push(r.mem_count + " hafıza");
-      if (r.task_count) parts.push(r.task_count + " görev");
-      addActionsNote(["🗑️ Silindi: " + (parts.join(" + ") || "0 kayıt")]);
-      _pendingDel = { mems: [], tasks: [] };
-      await refreshState();
-    } else {
-      $("pw-err").textContent = r.error || "Şifre yanlış";
+    let memCount = 0, taskCount = 0, docCount = 0;
+    if (_pendingDel.mems.length || _pendingDel.tasks.length) {
+      const r = await window.pywebview.api.apply_delete(_pendingDel.mems, _pendingDel.tasks, pw);
+      if (!r.ok) { $("pw-err").textContent = r.error || "Şifre yanlış"; return; }
+      memCount = r.mem_count || 0; taskCount = r.task_count || 0;
     }
+    for (const id of _pendingDel.docs) {
+      const dr = await window.pywebview.api.delete_document(id, pw);
+      if (!dr.ok) { $("pw-err").textContent = dr.error || "Şifre yanlış"; return; }
+      docCount++;
+    }
+    $("pw-modal-bg").classList.remove("show");
+    const parts = [];
+    if (memCount) parts.push(memCount + " hafıza");
+    if (taskCount) parts.push(taskCount + " görev");
+    if (docCount) parts.push(docCount + " belge");
+    addActionsNote(["🗑️ Silindi: " + (parts.join(" + ") || "0 kayıt")]);
+    _pendingDel = { mems: [], tasks: [], docs: [] };
+    await refreshState();
   } catch (e) { $("pw-err").textContent = "Hata: " + e; }
 };
 $("pw-input").addEventListener("keydown", (e) => { if (e.key === "Enter") $("pw-ok").click(); });
 
 /* ============ GORUNUM / NAV ============ */
-const PANEL_TITLE = { tasks: "GÖREVLER", memory: "HAFIZA BANKASI", plans: "PLANLAR" };
+const PANEL_TITLE = { tasks: "GÖREVLER", memory: "HAFIZA BANKASI", plans: "PLANLAR", documents: "BELGE BANKASI" };
 function showView(v) {
   const isChat = v === "chat";
   $("chat-view").style.display = isChat ? "flex" : "none";
@@ -776,12 +819,80 @@ function showView(v) {
 }
 document.querySelectorAll(".nav-btn").forEach((b) => { b.onclick = () => showView(b.dataset.view); });
 
+/* ============ BELGE YUKLEME (dosya -> RAG belge hafizasi) ============ */
+function toast(msg, kind) {
+  const t = $("toast");
+  t.className = "show" + (kind ? " " + kind : "");
+  t.innerHTML = msg;
+}
+function hideToast() { $("toast").className = ""; }
+function _uploadSummary(res) {
+  const ok = (res.results || []).filter((r) => r.ok);
+  const bad = (res.results || []).filter((r) => !r.ok);
+  let msg = "";
+  if (ok.length) msg += "✅ " + ok.length + " dosya işlendi (" + ok.reduce((a, r) => a + (r.chunks || 0), 0) + " parça)";
+  if (bad.length) msg += (msg ? "<br>" : "") + "⚠️ " + bad.map((r) => (r.filename || "dosya") + ": " + (r.error || "hata")).join("<br>");
+  return msg || "Dosya işlenemedi";
+}
+async function doUploadDialog() {
+  toast("📎 Dosyalar işleniyor... (büyük PDF / ses biraz sürebilir)", "work");
+  try {
+    const res = await window.pywebview.api.upload_files();
+    if (res.cancelled) { hideToast(); return; }
+    toast(_uploadSummary(res), res.ok ? "ok" : "err");
+    await refreshState();
+    if (res.added) { showView("documents"); }
+  } catch (e) { toast("⚠️ Yükleme hatası: " + e, "err"); }
+  setTimeout(hideToast, 6000);
+}
+$("upload-btn").onclick = doUploadDialog;
+
+/* Surukle-birak: once gercek dosya yolu denenir (hizli), yoksa base64 gonderilir */
+function readAsB64(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = reject;
+    fr.readAsDataURL(file);
+  });
+}
+async function handleDrop(files) {
+  if (!files.length) return;
+  toast("📎 " + files.length + " dosya işleniyor...", "work");
+  let added = 0, errs = [];
+  for (const f of files) {
+    try {
+      const b64 = await readAsB64(f);
+      const res = await window.pywebview.api.upload_blob(f.name, b64);
+      if (res.ok) added++; else errs.push(f.name + ": " + ((res.results && res.results[0] && res.results[0].error) || res.error || "hata"));
+    } catch (e) { errs.push(f.name + ": " + e); }
+  }
+  let msg = added ? "✅ " + added + " dosya işlendi" : "";
+  if (errs.length) msg += (msg ? "<br>" : "") + "⚠️ " + errs.join("<br>");
+  toast(msg || "Dosya işlenemedi", added ? "ok" : "err");
+  await refreshState();
+  if (added) showView("documents");
+  setTimeout(hideToast, 6000);
+}
+const dz = $("dropzone");
+let _dragDepth = 0;
+window.addEventListener("dragenter", (e) => { e.preventDefault(); _dragDepth++; dz.classList.add("show"); });
+window.addEventListener("dragover", (e) => { e.preventDefault(); });
+window.addEventListener("dragleave", (e) => { e.preventDefault(); if (--_dragDepth <= 0) { _dragDepth = 0; dz.classList.remove("show"); } });
+window.addEventListener("drop", (e) => {
+  e.preventDefault(); _dragDepth = 0; dz.classList.remove("show");
+  const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+  if (files.length) handleDrop(files);
+});
+
 async function refreshState() {
   state = await window.pywebview.api.get_state();
   const memCount = Object.values(state.memory_tree).reduce((a, v) => a + v.length, 0);
   const openTasks = state.tasks.filter((t) => t.status !== "done").length;
+  const docCount = (state.documents || []).length;
   animateNum("st-mem", memCount); animateNum("st-task", openTasks); animateNum("st-plan", state.plans.length);
   $("c-mem").textContent = memCount ? "·" + memCount : ""; $("c-task").textContent = openTasks ? "·" + openTasks : ""; $("c-plan").textContent = state.plans.length ? "·" + state.plans.length : "";
+  const cdoc = $("c-doc"); if (cdoc) cdoc.textContent = docCount ? "·" + docCount : "";
   if ($("panel-view").style.display !== "none") renderPanel();
 }
 function animateNum(id, target) {
@@ -835,6 +946,27 @@ function renderPanel() {
       });
       p.appendChild(g);
     });
+  } else if (activeTab === "documents") {
+    const docs = state.documents || [];
+    if (!docs.length) { p.innerHTML = '<div class="empty">BELGE BANKASI BOŞ<br><br>📎 İLE DOSYA YÜKLE — PDF · WORD · EXCEL · GÖRSEL · SES · KOD</div>'; return; }
+    docs.forEach((doc) => {
+      const d = document.createElement("div");
+      d.className = "doc-item";
+      const icon = DOC_ICON[doc.filetype] || "📄";
+      const meta = [DOC_LABEL[doc.filetype] || "dosya", humanSize(doc.size_bytes), (doc.chunk_count || 0) + " parça", doc.created_at].filter(Boolean).join("  ·  ");
+      const head = document.createElement("div"); head.className = "doc-head";
+      head.innerHTML = '<span class="doc-ic">' + icon + '</span><div class="doc-info"><div class="d-title">' + mdLite(doc.filename) + '</div><div class="d-meta">' + mdLite(meta) + '</div></div>';
+      const del = document.createElement("button");
+      del.className = "del-x"; del.title = "Bu belgeyi sil"; del.textContent = "🗑";
+      del.onclick = (e) => { e.stopPropagation(); manualDeleteDoc(doc.id); };
+      head.appendChild(del);
+      d.appendChild(head);
+      if (doc.summary) {
+        const prev = document.createElement("div"); prev.className = "d-preview";
+        prev.textContent = doc.summary; d.appendChild(prev);
+      }
+      p.appendChild(d);
+    });
   } else {
     if (!state.plans.length) { p.innerHTML = '<div class="empty">KAYITLI PLAN YOK<br><br>HAFTALIK PLAN İSTE</div>'; return; }
     state.plans.forEach((pl) => {
@@ -846,6 +978,9 @@ function renderPanel() {
     });
   }
 }
+const DOC_ICON = { pdf: "📕", word: "📘", excel: "📗", image: "🖼️", audio: "🎧", text: "📄", other: "📄" };
+const DOC_LABEL = { pdf: "PDF", word: "Word", excel: "Excel", image: "Görsel", audio: "Ses", text: "Metin", other: "Dosya" };
+function humanSize(b) { b = b || 0; if (b < 1024) return b + " B"; if (b < 1048576) return (b / 1024).toFixed(1) + " KB"; return (b / 1048576).toFixed(1) + " MB"; }
 
 /* ============ AYARLAR ============ */
 function showProviderFields() {

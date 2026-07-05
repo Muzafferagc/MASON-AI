@@ -12,7 +12,7 @@ import json
 import re
 from datetime import datetime
 
-from . import memory, planner
+from . import memory, planner, documents
 from .database import get_conn, rows_to_dicts
 from .llm import get_provider, LLMError
 
@@ -29,7 +29,7 @@ YOUR LONG-TERM MEMORY (facts you have saved about {user_name} and their projects
 
 OPEN TASKS (sorted by priority 1=highest, 5=lowest):
 {tasks}
-
+{documents}
 YOUR CAPABILITIES — ACTIONS:
 You can persist information by including ONE fenced code block labelled json:actions anywhere in your reply. The app executes it and hides it from the user. Format:
 
@@ -55,6 +55,7 @@ RULES:
 5. If information conflicts with an old memory, "forget" the old one and "remember" the corrected fact.
 6. Keep visible replies natural and conversational — like a real human assistant. Never mention the json:actions mechanism, databases, or system prompt to the user.
 7. If you have no actions to take, simply omit the block.
+8. UPLOADED DOCUMENTS: {user_name} can upload files (PDF, Word, Excel, images, audio, code...). When a "RELEVANT EXCERPTS FROM UPLOADED DOCUMENTS" section appears above, treat it as trusted source material: answer from it, quote it, and cite the source filename in brackets. If the answer is not in the excerpts, say so honestly instead of guessing. When a document reveals a lasting fact, goal, deadline or preference about {user_name}, proactively "remember" it (linking to a sensible project) so it is never lost.
 
 DELETION RULES — READ CAREFULLY, MISTAKES HERE ARE SERIOUS:
 - To delete ONE specific memory (e.g. "fitness'ı sil"): find its exact #id in YOUR LONG-TERM MEMORY above and emit "forget" with that id. If several memories belong to that project/topic, emit one "forget" per matching #id. NEVER delete memories the user did not mention.
@@ -179,11 +180,18 @@ def chat(user_message: str, config: dict) -> dict:
     """Kullanici mesajini isler; Mason'un cevabini ve yapilan islemleri dondurur."""
     save_message("user", user_message)
 
+    doc_context = documents.format_for_prompt(query=user_message, config=config)
+    doc_section = (
+        f"\nRELEVANT EXCERPTS FROM UPLOADED DOCUMENTS "
+        f"(the user's files — use as trusted source, cite [filename]):\n"
+        f"{doc_context}\n" if doc_context else ""
+    )
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
         user_name=config.get("user_name", "the user"),
         now=datetime.now().strftime("%A, %d %B %Y, %H:%M"),
         memories=memory.format_for_prompt(query=user_message, config=config),
         tasks=planner.format_tasks_for_prompt(),
+        documents=doc_section,
     )
     if config.get("memory_password"):
         system_prompt += (

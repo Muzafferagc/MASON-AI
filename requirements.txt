@@ -11,3 +11,10 @@ edge-tts>=6.1
 # "Hey Mason" + sistem tepsisi (Faz 3) - istege bagli
 pystray>=0.19
 pillow>=10.0
+
+# Belge yukleme / RAG (Faz 4) - istege bagli: kurulmayan turler otomatik atlanir
+# (PDF, Word, Excel okuma. Metin/kod/CSV ve gorsel/ses icin ek paket gerekmez;
+#  gorsel Gemini goru ile, ses faster-whisper ile okunur.)
+pypdf>=4.0
+python-docx>=1.1
+openpyxl>=3.1

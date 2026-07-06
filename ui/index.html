@@ -214,6 +214,8 @@
   .cal-cell { min-height: 72px; background: var(--glass); border: 1px solid var(--stroke); border-radius: 9px; padding: 4px 5px; overflow: hidden; }
   .cal-cell.empty { background: none; border: none; }
   .cal-cell.today { border-color: var(--stroke-2); box-shadow: 0 0 14px rgba(var(--accentRGB),.22) inset; }
+  .cal-cell.cal-click { cursor: pointer; transition: .15s; }
+  .cal-cell.cal-click:hover { border-color: var(--stroke-2); background: rgba(var(--accentRGB),.07); }
   .cal-num { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 3px; }
   .cal-cell.today .cal-num { color: var(--cyan); font-weight: 700; }
   .cal-task { font-size: 9.5px; line-height: 1.4; display: flex; align-items: center; gap: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
@@ -292,6 +294,11 @@
   #detail-modal .duo > div { flex: 1; }
   #detail-err { color: #ff6b81; font-size: 12px; margin-top: 8px; min-height: 14px; }
   .item-edit { cursor: pointer; }
+  #day-bg { display: none; position: fixed; inset: 0; background: rgba(1,3,8,.78); align-items: center; justify-content: center; z-index: 61; backdrop-filter: blur(9px); }
+  #day-bg.show { display: flex; animation: msgIn .3s; }
+  #day-modal { background: var(--glass-2); border: 1px solid var(--stroke-2); border-radius: 20px; padding: 26px; width: 460px; max-width: 92vw; max-height: 86vh; overflow-y: auto; box-shadow: 0 30px 90px rgba(0,0,0,.6), 0 0 70px rgba(var(--accentRGB),.1); backdrop-filter: blur(26px); }
+  #day-modal h2 { font-family: var(--hud); font-size: 13px; letter-spacing: 2px; color: var(--cyan); margin: 0 0 14px; }
+  #day-body .task-item { margin-bottom: 8px; }
   #pw-modal h2 { color: var(--cyan); font-family: var(--hud); font-size: 12px; letter-spacing: 3px; margin-bottom: 14px; }
   #pw-modal input { width: 100%; background: rgba(3,8,16,.85); border: 1px solid var(--stroke); border-radius: 11px; color: var(--text); padding: 12px 14px; font-size: 15px; outline: none; font-family: var(--body); }
   #pw-modal input:focus { border-color: var(--stroke-2); box-shadow: 0 0 16px rgba(var(--accentRGB),.1); }
@@ -533,6 +540,17 @@
     <div class="row" style="margin-top:12px">
       <button class="btn ghost" id="detail-cancel">VAZGEÇ</button>
       <button class="btn primary" id="detail-save">KAYDET</button>
+    </div>
+  </div>
+</div>
+
+<div id="day-bg" class="modal-bg-generic">
+  <div id="day-modal">
+    <h2 id="day-title">GÜN</h2>
+    <div id="day-body"></div>
+    <button class="new-chat-btn" id="day-add" style="margin-top:14px">+ BU GÜNE GÖREV / HATIRLATICI EKLE</button>
+    <div class="row" style="margin-top:8px">
+      <button class="btn ghost" id="day-close">KAPAT</button>
     </div>
   </div>
 </div>
@@ -951,17 +969,21 @@ $("pw-ok").onclick = async () => {
 $("pw-input").addEventListener("keydown", (e) => { if (e.key === "Enter") $("pw-ok").click(); });
 
 /* ============ DETAY / DÜZENLEME PANELİ ============ */
-let _detail = { type: null, id: null };
+let _detail = { type: null, id: null, mode: "edit", onDone: null };
 const _catTR = { fact: "Bilgi", goal: "Hedef", preference: "Tercih", project: "Proje" };
 const _recTR = { none: "Tekrar yok", daily: "Her gün", weekly: "Her hafta", monthly: "Her ay", yearly: "Her yıl" };
 function _opt(map, val) { return Object.entries(map).map(([k, v]) => '<option value="' + k + '"' + (k === val ? ' selected' : '') + '>' + v + '</option>').join(''); }
 function _esc(s) { return (s == null ? "" : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-function openDetail(type, item) {
-  _detail = { type, id: item.id };
+/* Takvimden / '+ ekle'den yeni görev-hatırlatıcı oluşturma */
+function openTaskCreate(dateStr, onDone) {
+  openDetail("task", { id: null, title: "", project: "", priority: 3, due_date: dateStr || "", recurrence: "none", status: "open", notes: "" }, "create", onDone);
+}
+function openDetail(type, item, mode, onDone) {
+  _detail = { type, id: item.id, mode: mode || "edit", onDone: onDone || null };
   $("detail-err").textContent = "";
   const b = $("detail-body");
   if (type === "task") {
-    $("detail-title").textContent = "✏️ GÖREV DETAYI";
+    $("detail-title").textContent = _detail.mode === "create" ? "➕ YENİ GÖREV / HATIRLATICI" : "✏️ GÖREV DETAYI";
     b.innerHTML =
       '<label>BAŞLIK</label><input id="dt-title" value="' + _esc(item.title) + '">' +
       '<div class="duo"><div><label>PROJE</label><input id="dt-project" value="' + _esc(item.project) + '"></div>' +
@@ -989,12 +1011,18 @@ function openDetail(type, item) {
 $("detail-cancel").onclick = () => $("detail-bg").classList.remove("show");
 $("detail-save").onclick = async () => {
   try {
-    let r;
+    let r, note = "✏️ Güncellendi";
     if (_detail.type === "task") {
-      r = await window.pywebview.api.update_task_details(_detail.id, {
+      const fields = {
         title: $("dt-title").value, project: $("dt-project").value,
         priority: parseInt($("dt-priority").value), due_date: $("dt-due").value || null,
-        recurrence: $("dt-recur").value, status: $("dt-status").value, notes: $("dt-notes").value });
+        recurrence: $("dt-recur").value, status: $("dt-status").value, notes: $("dt-notes").value };
+      if (_detail.mode === "create") {
+        if (!fields.title.trim()) { $("detail-err").textContent = "Başlık boş olamaz"; return; }
+        r = await window.pywebview.api.add_task_ui(fields); note = "➕ Görev eklendi";
+      } else {
+        r = await window.pywebview.api.update_task_details(_detail.id, fields);
+      }
     } else if (_detail.type === "memory") {
       r = await window.pywebview.api.update_memory_details(_detail.id, {
         content: $("dm-content").value, category: $("dm-category").value,
@@ -1005,8 +1033,9 @@ $("detail-save").onclick = async () => {
     }
     if (r && !r.ok) { $("detail-err").textContent = r.error || "Kaydedilemedi"; return; }
     $("detail-bg").classList.remove("show");
-    addActionsNote(["✏️ Güncellendi"]);
+    addActionsNote([note]);
     await refreshState();
+    if (_detail.onDone) { const cb = _detail.onDone; _detail.onDone = null; cb(); }
   } catch (e) { $("detail-err").textContent = "Hata: " + e; }
 };
 
@@ -1117,7 +1146,11 @@ function renderPanel() {
   const p = $("panel");
   p.innerHTML = "";
   if (activeTab === "tasks") {
-    if (!state.tasks.length) { p.innerHTML = '<div class="empty">GÖREV LİSTESİ BOŞ<br><br>MASON\'A SÖYLE, EKLESIN</div>'; return; }
+    const nb = document.createElement("button");
+    nb.className = "new-chat-btn"; nb.innerHTML = "+ YENİ GÖREV / HATIRLATICI";
+    nb.onclick = () => openTaskCreate(_ymd(new Date()), null);
+    p.appendChild(nb);
+    if (!state.tasks.length) { const e = document.createElement("div"); e.className = "empty"; e.style.marginTop = "24px"; e.innerHTML = "GÖREV LİSTESİ BOŞ<br><br>YUKARIDAN EKLE YA DA MASON'A SÖYLE"; p.appendChild(e); return; }
     state.tasks.forEach((t) => {
       const d = document.createElement("div");
       d.className = "task-item" + (t.status === "done" ? " done" : "");
@@ -1254,9 +1287,60 @@ function humanSize(b) { b = b || 0; if (b < 1024) return b + " B"; if (b < 10485
 /* ============ TAKVİM ============ */
 const AY_ADI = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 const GUN_KISA = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
+const GUN_TAM = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"];
 let calRef = new Date(); calRef.setDate(1);
 function _ymd(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 function _prioColor(p) { return ["", "#ff6b81", "#ffb347", "#3ce7ff", "#7ff0ff", "#8aa"][p] || "#3ce7ff"; }
+
+/* ---- Gün detayı: bir güne tıklayınca o günün görevleri + ekleme ---- */
+function _tasksOnDay(ds) {
+  const out = [];
+  (state.tasks || []).forEach((t) => {
+    if (!t.due_date) return;
+    if (t.due_date === ds) { out.push(t); return; }
+    const rec = t.recurrence;
+    if (!rec || rec === "none") return;
+    const anchor = new Date(t.due_date + "T00:00:00"), cur = new Date(ds + "T00:00:00");
+    if (isNaN(anchor) || cur <= anchor) return;
+    let hit = false;
+    if (rec === "daily") hit = true;
+    else if (rec === "weekly") hit = cur.getDay() === anchor.getDay();
+    else if (rec === "monthly") hit = cur.getDate() === anchor.getDate();
+    else if (rec === "yearly") hit = cur.getDate() === anchor.getDate() && cur.getMonth() === anchor.getMonth();
+    if (hit) out.push({ ...t, _recurring: true });
+  });
+  return out;
+}
+let _dayCurrent = null;
+function openDayDetail(ds) {
+  _dayCurrent = ds;
+  const d = new Date(ds + "T00:00:00");
+  $("day-title").textContent = "📅 " + d.getDate() + " " + AY_ADI[d.getMonth()] + " " + d.getFullYear() + " · " + GUN_TAM[(d.getDay() + 6) % 7];
+  renderDayBody(ds);
+  $("day-bg").classList.add("show");
+}
+function renderDayBody(ds) {
+  const b = $("day-body");
+  const items = _tasksOnDay(ds);
+  if (!items.length) { b.innerHTML = '<div class="empty" style="margin-top:10px">BU GÜN BOŞ<br><br>AŞAĞIDAN GÖREV / HATIRLATICI EKLE</div>'; return; }
+  b.innerHTML = "";
+  items.forEach((t) => {
+    const row = document.createElement("div"); row.className = "task-item" + (t.status === "done" ? " done" : "");
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = t.status === "done";
+    cb.onchange = async () => { await window.pywebview.api.toggle_task(t.id, cb.checked); await refreshState(); renderDayBody(ds); };
+    const info = document.createElement("div"); info.className = "item-edit"; info.style.flex = "1"; info.title = "Düzenle";
+    const rmark = (t._recurring || (t.recurrence && t.recurrence !== "none")) ? "🔁 " : "";
+    const meta = [t.project, "P" + t.priority, t.notes].filter(Boolean).join("  ·  ");
+    info.innerHTML = '<div class="t-title">' + rmark + mdLite(t.title) + "</div>" + (meta ? '<div class="t-meta">' + mdLite(meta) + "</div>" : "");
+    info.onclick = () => { $("day-bg").classList.remove("show"); openDetail("task", t, "edit", () => openDayDetail(ds)); };
+    const del = document.createElement("button"); del.className = "del-x"; del.textContent = "🗑"; del.title = "Sil";
+    del.onclick = (e) => { e.stopPropagation(); $("day-bg").classList.remove("show"); manualDelete([], [t.id]); };
+    row.appendChild(cb); row.appendChild(info); row.appendChild(del);
+    b.appendChild(row);
+  });
+}
+$("day-close").onclick = () => $("day-bg").classList.remove("show");
+$("day-add").onclick = () => { $("day-bg").classList.remove("show"); openTaskCreate(_dayCurrent, () => openDayDetail(_dayCurrent)); };
 function renderCalendar(p) {
   const y = calRef.getFullYear(), m = calRef.getMonth();
   const first = new Date(y, m, 1);
@@ -1303,7 +1387,9 @@ function renderCalendar(p) {
   for (let d = 1; d <= days; d++) {
     const ds = _ymd(new Date(y, m, d));
     const cell = document.createElement("div");
-    cell.className = "cal-cell" + (ds === todayStr ? " today" : "");
+    cell.className = "cal-cell cal-click" + (ds === todayStr ? " today" : "");
+    cell.title = "Bu güne bak / ekle";
+    cell.onclick = () => openDayDetail(ds);
     let html = '<div class="cal-num">' + d + "</div>";
     const items = (byDay[ds] || []).slice(0, 3);
     items.forEach((t) => {

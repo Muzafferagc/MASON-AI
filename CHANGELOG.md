@@ -12,6 +12,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Sürümleme / Version
 
 ## [Unreleased] — Yayınlanmadı
 
+### Eklendi (Takvim daha fonksiyonel — Apple Takvim gibi)
+- **Güne tıkla → gün detayı:** Takvimde herhangi bir güne tıklayınca o günün tüm görev/hatırlatıcıları açılır; her birini oradan **tamamlayabilir, düzenleyebilir veya silebilirsin** (tekrar edenler 🔁 ile).
+- **Kendin ekle:** Gün penceresindeki **"+ Bu güne görev / hatırlatıcı ekle"** ile doğrudan o güne yeni bir şey koyabilirsin (başlık, öncelik, tekrar, not). Ayrıca GÖREVLER sekmesinin üstünde **"+ Yeni Görev / Hatırlatıcı"** butonu — artık her şeyi Mason'a söylemek zorunda değilsin.
+- Takvim hücreleri tıklanabilir/vurgulu hale geldi; yeni `api.add_task_ui` ve detay modalında "oluştur" modu (tarih önceden dolu gelir).
+
 ### Düzeltildi (KRİTİK — görev ekleme sessizce bozuktu)
 - **`agent.py` tekrar (recurrence) için `planner.add_task`'ı 6 argümanla çağırıyordu ama `planner.py` hâlâ 5 argüman kabul ediyordu** → her `add_task` çağrısı `TypeError` fırlatıp sessizce yutuluyordu, yani sohbetten görev ekleme çalışmıyordu. `planner.py` tamamlandı; artık `recurrence` parametresi ve tamamlanınca sonraki tekrarı oluşturan `complete_task` var. Eski veritabanlarına `tasks.recurrence` ve `memories.note` sütunları güvenli göç ile eklendi.
 

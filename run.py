@@ -464,6 +464,22 @@ class Api:
             planner.update_task(int(task_id), status="open")
         return self.get_state()
 
+    # ---- Takvim / gorev olusturma (arayuzden) ----
+    def add_task_ui(self, fields: dict) -> dict:
+        """Arayuzden (takvim gunu veya '+ ekle') yeni bir gorev/hatirlatici olusturur."""
+        try:
+            f = fields or {}
+            title = (f.get("title") or "").strip()
+            if not title:
+                return {"ok": False, "error": "Başlık boş olamaz"}
+            tid = planner.add_task(
+                title, (f.get("project") or None), f.get("priority", 3),
+                (f.get("due_date") or None), (f.get("notes") or None),
+                (f.get("recurrence") or "none"))
+            return {"ok": True, "id": tid}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ---- Detay / duzenleme paneli ----
     def update_task_details(self, task_id: int, fields: dict) -> dict:
         """Gorev detaylarini gunceller (baslik/proje/oncelik/tarih/tekrar/not/durum)."""

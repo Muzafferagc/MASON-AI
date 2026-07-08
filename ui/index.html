@@ -599,6 +599,10 @@ function blip(freq, dur = 0.07, vol = 0.03, type = "sine") {
 const fxSend = () => { blip(880, .05); setTimeout(() => blip(1320, .06), 50); };
 const fxReply = () => blip(620, .08);
 const fxWake = () => { blip(520, .07); setTimeout(() => blip(820, .09), 80); };
+/* Kesintisiz sesli modda mikrofon KAPANDI sinyali: inen iki nota =
+   "seni artik dinlemiyorum, tekrar konusmak icin Hey Mason de". Acilis sesi
+   zaten setState('listening') -> fxWake (yukselen nota) ile calar. */
+window.micClosedCue = () => { blip(760, .07, .03); setTimeout(() => blip(430, .11, .03), 90); };
 
 /* ============ DURUM MAKINESI ============ */
 const STATUS_TEXT = { idle: "ÇEVRİMİÇİ", listening: "SİZİ DİNLİYORUM", thinking: "İŞLİYORUM", speaking: "KONUŞUYORUM" };

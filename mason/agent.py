@@ -52,6 +52,12 @@ TONE — BE NATURAL (very important):
 - When {user_name} introduces themselves or greets you ("ben kimim", "merhaba"), answer naturally from what you actually know in YOUR LONG-TERM MEMORY above. If memory is empty about them, say so warmly and ask — do NOT invent facts.
 - Keep replies concise. Don't over-explain. Don't announce what you saved unless it's helpful.
 
+CONVERSATION FLOW (hands-free voice) — VERY IMPORTANT:
+- This is a voice assistant. After you reply, the microphone may stay open so {user_name} can keep talking WITHOUT saying "Hey Mason" again.
+- When {user_name} clearly ENDS the conversation — e.g. "yok bir şey", "boşver", "tamam sağ ol", "teşekkürler bu kadar", "görüşürüz", "kapatabilirsin", "that's all" — append the hidden marker ⟦END⟧ at the very END of your reply. The app strips it and closes the mic (back to "Hey Mason" mode). Reply warmly first (e.g. "Rica ederim, buradayım."), then the marker.
+- Do NOT add ⟦END⟧ while the conversation is still going, and NEVER add it when you are asking {user_name} a question (you want to hear their answer).
+- NEVER mention or explain this marker to {user_name}.
+
 GROUNDING — DO NOT MAKE THINGS UP:
 - You do NOT have GPS or the user's live location. NEVER claim to know their current city, the weather, or where they are unless it is written in YOUR LONG-TERM MEMORY. If asked, say you don't know it and offer to remember it if they tell you.
 - Only state facts that are in memory, in the conversation, or in uploaded documents. If unsure, say so.
@@ -75,6 +81,71 @@ DELETION RULES — READ CAREFULLY, MISTAKES HERE ARE SERIOUS:
 ACTIONS_RE = re.compile(r"```json:actions\s*(.*?)```", re.DOTALL)
 # Bazi modeller etiketi unutup duz ```json blogu icinde {"actions": ...} dondurur
 FALLBACK_RE = re.compile(r"```(?:json)?\s*(\{\s*\"actions\".*?)```", re.DOTALL)
+
+# --- KONUSMA BITISI ALGILAMA (kesintisiz sesli mod icin) ---
+# 1) LLM sinyali: kullanici sohbeti acikca bitirdiginde cevabinin SONUNA gizli
+#    bir isaret koyar (⟦END⟧ / [BITTI] / <DONE>...). Uygulama bunu ayiklar ve
+#    mikrofonu tekrar acmaz -> normal "Hey Mason" moduna doner.
+END_TOKEN_RE = re.compile(
+    r"[⟦\[\(<]{1,2}\s*(?:END|BITTI|BITIR|DONE|KAPAT)\s*[⟧\]\)>]{1,2}",
+    re.IGNORECASE,
+)
+
+# 2) Yerel yedek: internet/LLM sinyali gelmese bile bariz kapanis kaliplarini
+#    aninda yakala. Sadece KISA ve tamamen "kapanis + dolgu" kelimelerden olusan
+#    mesajlar bitis sayilir; "tamam sunu ekle" gibi komutlar ETKILENMEZ.
+_CLOSING_PHRASES = (
+    "yok bir sey", "yok birsey", "hicbir sey", "hic bir sey", "bir sey yok",
+    "bos ver", "bosver", "sag ol", "sagol", "cok sagol", "tesekkur ederim",
+    "tesekkurler", "eyvallah", "hosca kal", "iyi geceler", "iyi gunler",
+    "gorusuruz", "kendine iyi bak", "bu kadar", "o kadar", "gerek yok",
+    "simdilik bu kadar", "kapatabilirsin", "that is all", "thats all",
+    "that s all", "never mind", "nevermind", "good night", "goodbye",
+)
+# Uzun kaliplar once eslesmeli ("simdilik bu kadar" -> "bu kadar"a bolunmesin)
+_CLOSING_PHRASES = tuple(sorted(_CLOSING_PHRASES, key=len, reverse=True))
+_CLOSING_WORDS = {
+    "tamam", "tamamdir", "tamamdır", "yeter", "kapat", "kapan", "peki",
+    "olur", "anladim", "anladım", "harika", "super", "süper", "guzel", "güzel",
+    "thanks", "thank", "you", "bye", "ok", "okay", "cool", "nice",
+}
+_FILLER_WORDS = {"mason", "efendim", "hey", "he", "ha", "ya", "ve", "bi", "bir",
+                 "de", "da", "cok", "çok", "iyi", "__end__"}
+
+
+def _norm_tr(text: str) -> str:
+    """Kucuk harf + Turkce harfleri sadelestir + noktalama temizle."""
+    t = (text or "").lower().strip()
+    for a, b in (("ç", "c"), ("ğ", "g"), ("ı", "i"), ("ö", "o"),
+                 ("ş", "s"), ("ü", "u"), ("â", "a"), ("î", "i")):
+        t = t.replace(a, b)
+    t = re.sub(r"[^\w\s]", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def is_closing_phrase(text: str) -> bool:
+    """Kullanicinin mesaji sohbeti bitiren bir ifade mi? (yerel/aninda)
+
+    Yaklasim: mesaji sadelestir, cok-kelimeli kapanis kaliplarini isaretle,
+    kalan tum kelimeler kapanis/dolgu kelimesiyse -> bitis. Boylece 'yok bir
+    sey', 'tamam sagol', 'tesekkurler mason' yakalanir; 'tamam sunu ekle',
+    'yok gorevi sil' gibi icinde komut olan mesajlar YAKALANMAZ."""
+    t = _norm_tr(text)
+    if not t:
+        return False
+    for phrase in _CLOSING_PHRASES:
+        if phrase in t:
+            t = t.replace(phrase, " __end__ ")
+    tokens = t.split()
+    if len(tokens) > 5:          # uzun mesaj = muhtemelen gercek komut
+        return False
+    has_closer = "__end__" in tokens or any(w in _CLOSING_WORDS for w in tokens)
+    if not has_closer:
+        return False
+    # Kapanis disinda kalan her kelime dolgu/kapanis olmali; komut kelimesi varsa
+    # (or. "ekle", "sil", "hatirlat") bitis SAYMA.
+    return all(w in _CLOSING_WORDS or w in _FILLER_WORDS or w == "__end__"
+               for w in tokens)
 
 
 # ---------- Konusma gecmisi (cok-sohbetli) ----------
@@ -261,6 +332,15 @@ def strip_actions(text: str) -> tuple[str, str | None]:
     return (text[: m.start()] + text[m.end():]).strip(), m.group(1).strip()
 
 
+def strip_end_token(text: str) -> tuple[str, bool]:
+    """Cevaptan gizli ⟦END⟧ isaretini ayiklar. (temiz_cevap, bitti_mi)"""
+    if not text:
+        return text, False
+    found = bool(END_TOKEN_RE.search(text))
+    clean = re.sub(r"\s+", " ", END_TOKEN_RE.sub(" ", text)).strip()
+    return clean, found
+
+
 # ---------- Ana giris noktasi ----------
 
 def chat(user_message: str, config: dict) -> dict:
@@ -325,6 +405,7 @@ def _chat(user_message: str, config: dict) -> dict:
     raw_reply = provider.chat(system_prompt, llm_messages)
 
     clean_reply, actions_json = strip_actions(raw_reply)
+    clean_reply, llm_over = strip_end_token(clean_reply)  # gizli ⟦END⟧ isareti
     if actions_json:
         actions_done, pending_forget, pending_tasks = execute_actions(
             actions_json, config, user_message)
@@ -335,7 +416,17 @@ def _chat(user_message: str, config: dict) -> dict:
     if not clean_reply:
         clean_reply = "Kaydettim." if actions_done else "..."
 
+    # KESINTISIZ SESLI MOD icin sohbet akisi bayraklari:
+    #  conversation_over: LLM ⟦END⟧ koydu VEYA kullanici bariz bir kapanis dedi
+    #    -> mikrofonu tekrar acma, "Hey Mason" moduna don.
+    #  expects_reply: Mason bir soruyla bitirdi -> kullanici cevap verecek,
+    #    dinleme penceresini uzun tut.
+    conversation_over = bool(llm_over) or is_closing_phrase(user_message)
+    expects_reply = (not conversation_over) and clean_reply.rstrip().endswith("?")
+
     save_message("assistant", clean_reply)
     return {"reply": clean_reply, "actions_done": actions_done,
             "error": False, "pending_forget": pending_forget,
-            "pending_tasks": pending_tasks, "chat_id": get_active_chat()}
+            "pending_tasks": pending_tasks, "chat_id": get_active_chat(),
+            "conversation_over": conversation_over,
+            "expects_reply": expects_reply}

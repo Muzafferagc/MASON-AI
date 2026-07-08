@@ -17,5 +17,8 @@
   "clap_enabled": true,
   "start_hidden": true,
   "memory_password": "",
-  "theme": "cyan"
+  "theme": "cyan",
+  "continuous_mode": true,
+  "continuous_window_sec": 8,
+  "continuous_window_reply_sec": 15
 }

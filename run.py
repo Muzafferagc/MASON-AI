@@ -38,6 +38,33 @@ _force_show = False      # --show ile baslatildiysa gizleme ayarini yok say
 _speaking_until = 0.0    # Mason konusurken kendini duymasin diye
 _last_reply_text = ""    # Mason'un su an okudugu cevap (barge-in self-trigger'i engeller)
 _skip_continuous = False # uyku moduna gecerken kesintisiz dinlemeyi bir kez atla
+_last_conv_over = False   # son komut sohbeti bitirdi mi? -> mikrofonu tekrar acma
+_last_expects_reply = False  # Mason soru sordu mu? -> dinleme penceresini uzat
+
+
+def _reopen_window_sec(cfg: dict) -> float:
+    """Kesintisiz modda mikrofon ne kadar acik kalsin? Mason bir soru sorduysa
+    (kullanicidan cevap bekliyor) daha uzun; normalde kisa."""
+    if _last_expects_reply:
+        return cfg.get("continuous_window_reply_sec", 15)
+    return cfg.get("continuous_window_sec", 8)
+
+
+def _continue_or_close(cfg: dict) -> None:
+    """KESINTISIZ MOD karar noktasi: son komut sohbeti bitirdiyse mikrofonu
+    tekrar ACMA (kapanis sesi cal, "Hey Mason" moduna don); yoksa pencereyi
+    (soru bekleniyorsa uzun) yeniden ac ve dinlemeye gec."""
+    if not (cfg.get("continuous_mode") and listener is not None):
+        return
+    try:
+        if _last_conv_over:
+            _js("micClosedCue()")          # "seni artik dinlemiyorum" sesi
+            _js("setState('idle')")
+        else:
+            listener.open_command_window(_reopen_window_sec(cfg))
+            _js("setState('listening')")   # setState zaten acilis sesi calar
+    except Exception:
+        pass
 
 
 def _mark_speaking(text: str) -> None:
@@ -599,13 +626,9 @@ class Api:
         if _skip_continuous:
             _skip_continuous = False  # uyku sonrasi bir kez atla
             return {"ok": True}
-        cfg = load_config()
-        if cfg.get("continuous_mode") and listener is not None:
-            try:
-                listener.open_command_window(cfg.get("continuous_window_sec", 8))
-                _js("setState('listening')")
-            except Exception:
-                pass
+        # Sohbet bittiyse mikrofonu tekrar acma; yoksa (soru bekleniyorsa uzun)
+        # pencereyi yeniden ac. Karar _last_conv_over/_last_expects_reply'da.
+        _continue_or_close(load_config())
         return {"ok": True}
 
     # ---- Sabah brifingi + hava durumu + takvim ----
@@ -727,6 +750,12 @@ def _js(code: str) -> None:
 
 def _on_wake_only() -> None:
     """Uyandirildi (kelime veya alkis): pencereyi ac, 'Efendim?' de, komut bekle."""
+    global _last_conv_over, _last_expects_reply
+    # Yeni uyanma = kullanici aktif olarak konusuyor. Onceki sohbetin "bitti"
+    # bayragi burada sifirlanmali; yoksa "Efendim?" sonrasi audio_ended eski
+    # karari okuyup mikrofonu acmayabilir. Cevap bekledigimiz icin uzun pencere.
+    _last_conv_over = False
+    _last_expects_reply = True
     _show_window()
     _js("setState('listening')")
     try:
@@ -743,6 +772,7 @@ def _on_command(text: str) -> None:
     DAYANIKLILIK: cevap uretimi (ozellikle yavas/hatali Ollama) bir istisna
     firlatirsa bile UI 'İŞLİYORUM'da ASLA takili kalmasin diye her durumda
     voiceReply cagrilir. Bir hata olursa kullaniciya anlasilir mesaj gider."""
+    global _last_conv_over, _last_expects_reply
     _show_window()
     _js(f"voiceUser({json.dumps(text)})")
     try:
@@ -753,6 +783,11 @@ def _on_command(text: str) -> None:
     except Exception as e:  # noqa: BLE001 - UI kilitlenmesin
         result = {"reply": f"⚠️ Bir hata oluştu: {e}", "actions_done": [],
                   "error": True}
+    # Sohbet akisi kararini sakla: audio_ended() (sesli mod) ya da asagidaki
+    # (sessiz mod) dali bunu okuyup mikrofonu acar/kapatir. Uyku komutu her
+    # zaman sohbeti bitirir.
+    _last_conv_over = bool(result.get("conversation_over")) or _looks_like_sleep(text)
+    _last_expects_reply = bool(result.get("expects_reply"))
     try:
         _js(f"voiceReply({json.dumps(result.get('reply', ''))}, "
             f"{json.dumps(result.get('actions_done', []))}, "
@@ -761,15 +796,14 @@ def _on_command(text: str) -> None:
             f"{json.dumps(result.get('pending_tasks', []))})")
     except Exception:
         pass
-    # KESINTISIZ MOD: sesli yanit KAPALIYSA audio_ended tetiklenmez; komut
-    # penceresini burada acalim ki yine "Hey Mason" demeden devam edilebilsin.
+    # KESINTISIZ MOD: sesli yanit KAPALIYSA audio_ended tetiklenmez; kararı
+    # (devam mı, kapat mı) burada verelim. Sesli mod acikken audio_ended
+    # tetiklenecegi icin burada tekrar acmayiz (cift acilis olmasin).
     try:
         cfg = load_config()
-        if (cfg.get("continuous_mode") and listener is not None
-                and not cfg.get("voice_replies", True)
+        if (not cfg.get("voice_replies", True)
                 and not _looks_like_sleep(text)):
-            listener.open_command_window(cfg.get("continuous_window_sec", 8))
-            _js("setState('listening')")
+            _continue_or_close(cfg)
     except Exception:
         pass
 

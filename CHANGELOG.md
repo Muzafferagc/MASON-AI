@@ -12,6 +12,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Sürümleme / Version
 
 ## [Unreleased] — Yayınlanmadı
 
+### Eklendi (Faz 9 — Akıllı konuşma bitişi & dinamik dinleme)
+- **Konuşmanın bittiğini Mason'un kendisi anlaması (hibrit):** Kesintisiz sesli modda artık her cevaptan sonra mikrofon körlemesine 8 sn açılmıyor. İki katmanlı karar: (1) **LLM sinyali** — kullanıcı sohbeti açıkça bitirdiğinde (ör. "yok bir şey", "boşver", "tamam sağ ol", "görüşürüz") model cevabının sonuna gizli `⟦END⟧` işareti koyar; uygulama bunu ayıklayıp mikrofonu **tekrar açmaz**, "Hey Mason" moduna döner. (2) **Yerel yedek** — internet/LLM sinyali gelmese bile bariz kapanış kalıpları `agent.is_closing_phrase()` ile anında yakalanır; "tamam şunu ekle" gibi içinde komut olan mesajlar bitiş **sayılmaz** (yanlış-pozitif koruması, birim testli).
+- **Dinamik dinleme penceresi:** Mason bir **soruyla** bittiyse (senden cevap bekliyor) mikrofon daha uzun açık kalır (`continuous_window_reply_sec`, vars. 15 sn); normal durumda kısa (`continuous_window_sec`, 8 sn). Sabit süre yerine akışa göre ayarlanır.
+- **Mikrofon kapanış sesi:** Kesintisiz modda sohbet bitip mikrofon kapanınca inen iki notalı bir ipucu (`micClosedCue`) çalar — "seni artık dinlemiyorum, tekrar konuşmak için Hey Mason de". Açılış sesi zaten mevcut (`fxWake`). Artık Mason'un seni dinleyip dinlemediğini tahmin etmek zorunda değilsin.
+- Yeni ayar: `continuous_window_reply_sec` (config.json / config.example.json). `agent.chat()` dönüşüne `conversation_over` ve `expects_reply` alanları; `run.py`'de `_continue_or_close()` karar noktası; `_on_wake_only`'de yeni uyanmada bayrak sıfırlama (uyanınca hep dinlemeye geç).
+
 ### Eklendi (Takvim daha fonksiyonel — Apple Takvim gibi)
 - **Güne tıkla → gün detayı:** Takvimde herhangi bir güne tıklayınca o günün tüm görev/hatırlatıcıları açılır; her birini oradan **tamamlayabilir, düzenleyebilir veya silebilirsin** (tekrar edenler 🔁 ile).
 - **Kendin ekle:** Gün penceresindeki **"+ Bu güne görev / hatırlatıcı ekle"** ile doğrudan o güne yeni bir şey koyabilirsin (başlık, öncelik, tekrar, not). Ayrıca GÖREVLER sekmesinin üstünde **"+ Yeni Görev / Hatırlatıcı"** butonu — artık her şeyi Mason'a söylemek zorunda değilsin.

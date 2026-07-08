@@ -12,6 +12,11 @@ edge-tts>=6.1
 pystray>=0.19
 pillow>=10.0
 
+# Gercek konusma-bitti algisi (Faz 9, Silero VAD) - istege bagli:
+# kurulmazsa wakeword.py otomatik eski enerji-esigi yontemine doner.
+silero-vad>=5.1
+onnxruntime>=1.17
+
 # Belge yukleme / RAG (Faz 4) - istege bagli: kurulmayan turler otomatik atlanir
 # (PDF, Word, Excel okuma. Metin/kod/CSV ve gorsel/ses icin ek paket gerekmez;
 #  gorsel Gemini goru ile, ses faster-whisper ile okunur.)

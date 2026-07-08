@@ -14,6 +14,8 @@ import re
 import threading
 import time
 
+from . import vad  # Silero VAD (istege bagli); kurulu degilse enerji-esigine doner
+
 try:
     import numpy as np
     import sounddevice as sd
@@ -83,6 +85,7 @@ class WakeWordListener(threading.Thread):
         self._threshold = 0.012
         self._busy = False       # bir komut islenirken yeni sesleri atla
         self._busy_since = 0.0   # kilitlenmeye karsi: cok uzun surerse sifirla
+        self._vad = None         # Silero VAD (run() icinde yuklenir; None=enerji)
 
     # --- yardimcilar ---
 
@@ -190,6 +193,13 @@ class WakeWordListener(threading.Thread):
             self.on_status("error")
             return
 
+        # Silero VAD'i yuklemeyi dene (istege bagli). Kurulu degilse ya da ayar
+        # kapaliysa None kalir; _listen_once otomatik enerji-esigine doner.
+        try:
+            self._vad = vad.try_create(self.config)
+        except Exception:
+            self._vad = None
+
         # KENDINI ONARAN DINLEME: mikrofon/stream cokerse thread olmesin;
         # kisa bekleyip stream'i yeniden ac. Boylece "bir komuttan sonra
         # bir daha algilamiyor" sorunu kalici olarak ortadan kalkar.
@@ -242,12 +252,23 @@ class WakeWordListener(threading.Thread):
                                 continue
                     prev_peak = peak
 
-                    # --- Konusma (VAD) algilama ---
-                    # Mason konusurken esigi yukselt: hoparlorden kaçan kendi
-                    # sesini konusma sanmasin; ama yuksek sesle "hey mason"
-                    # dersen yine yakalar (barge-in).
+                    # --- Konusma algilama ---
+                    # Silero VAD kuruluysa (ve Mason konusmuyorsa) "bu blok
+                    # insan konusmasi mi?" karari VAD ile verilir -> gurultuye
+                    # dayanikli, sessizlik hizli anlasilir. Aksi halde ya da
+                    # Mason konusurken (barge-in / eko riski) klasik enerji
+                    # esigine dusulur: esigi yukseltip hoparlorden kaçan kendi
+                    # sesini konusma sanmayi engelleriz, ama yuksek sesle
+                    # "hey mason" dersen yine yakalar.
                     thr = self._threshold * (2.2 if self.is_suppressed() else 1.0)
-                    if energy > thr:
+                    if self._vad is not None and not self.is_suppressed():
+                        # Ucuz on-kapi: tam sessizlikte VAD'i bosuna cagirma.
+                        speech = energy > (self._threshold * 0.4) and \
+                            self._vad.is_speech(block)
+                    else:
+                        speech = energy > thr
+
+                    if speech:
                         in_speech = True
                         silence_count = 0
                         utterance.append(block)

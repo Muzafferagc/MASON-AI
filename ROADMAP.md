@@ -103,11 +103,14 @@ cilalıyoruz.
   Saf canvas, kütüphanesiz, çevrimdışı, sıfır API maliyeti. → `mason/graph.py`,
   `api.get_brain_graph()`, `ui/index.html` BEYİN sekmesi.
 
-- **Faz B — Obsidian köprüsü** (sıradaki)
-  Hafızayı gerçek bir Obsidian vault'una markdown + `[[bağlantı]]` olarak iki
-  yönlü aynala. Beynini Obsidian'da gez/düzenle, MASON geri okusun.
+- **Faz B — Obsidian köprüsü** ✅ TAMAMLANDI
+  Hafıza + görevler + planlar gerçek bir Obsidian vault'una (`MasonVault/`)
+  markdown + `[[bağlantı]]` olarak iki yönlü aynalanıyor. Obsidian'da düzenle,
+  MASON geri okur; kutu işaretle, görev tamamlanır. Vault'tan silme hafızayı
+  silmez (şifre baypası yok); çakışmada DB kazanır + kullanıcı sürümü yedeklenir.
+  → `mason/obsidian.py`, Ayarlar'da 🔮 OBSIDIAN KÖPRÜSÜ bölümü.
 
-- **Faz C — Canlı his**
+- **Faz C — Canlı his** (sıradaki)
   Cevaplar kelime kelime aksın (streaming), konuşurken nefes alan bir orb/küre
   görselleştirmesi. "Ölü kutu" değil, düşünen bir varlık hissi.
 

@@ -530,7 +530,17 @@
     </div>
     <div class="hint" id="chat-backup-status">Tüm sohbet geçmişini <b>yedekler/</b> klasörüne kaydeder; en yeni yedekten geri yükler. Yedekler YEDEKLER sekmesinde de görünür.</div>
 
-    <label class="check-row"><input type="checkbox" id="s-wake"> "Hey Mason" ile uyanma</label>
+    <label style="margin-top:14px">🔮 OBSIDIAN KÖPRÜSÜ (BEYİN AYNASI)</label>
+    <label class="check-row"><input type="checkbox" id="s-obs-on"> Hafızayı Obsidian vault'una aynala (iki yönlü)</label>
+    <label>VAULT KLASÖRÜ</label>
+    <input id="s-obs-path" placeholder="Boş bırak = proje yanındaki MasonVault klasörü">
+    <div class="row" style="margin-top:8px">
+      <button class="btn ghost" id="s-obs-sync" type="button">🔄 ŞİMDİ EŞİTLE</button>
+      <button class="btn ghost" id="s-obs-open" type="button">📂 VAULT'U AÇ</button>
+    </div>
+    <div class="hint" id="obs-status">Hafıza, görev ve planlar markdown notları olarak eşitlenir (arka planda ~60 sn'de bir). Obsidian'da <b>Open folder as vault</b> ile bu klasörü aç. Vault'tan not silmek hafızayı silmez — silme uygulama içinden, şifreyle. Yolu değiştirdiysen önce <b>KAYDET</b>.</div>
+
+    <label class="check-row" style="margin-top:14px"><input type="checkbox" id="s-wake"> "Hey Mason" ile uyanma</label>
     <label class="check-row"><input type="checkbox" id="s-clap"> Çift alkış ile uyanma</label>
     <label class="check-row"><input type="checkbox" id="s-continuous"> Kesintisiz konuşma modu (cevaptan sonra "Hey Mason" demeden dinle)</label>
     <label class="check-row"><input type="checkbox" id="s-hidden"> Gizli başla (tepside bekle)</label>
@@ -1723,6 +1733,13 @@ $("settings-btn").onclick = async () => {
   $("s-weather-city").value = c.weather_city || "Antalya";
   $("s-weather-lat").value = c.weather_lat != null ? c.weather_lat : 36.90;
   $("s-weather-lon").value = c.weather_lon != null ? c.weather_lon : 30.70;
+  $("s-obs-on").checked = c.obsidian_enabled !== false;
+  $("s-obs-path").value = c.obsidian_vault_path || "";
+  window.pywebview.api.obsidian_status().then((st) => {
+    if (st && st.zaman) {
+      $("obs-status").innerHTML = (st.ok ? "✅ Son eşitleme: " + st.zaman : "⚠️ Son eşitleme hatalı: " + (st.error || "?")) + " — 📁 " + (st.vault || "");
+    }
+  }).catch(() => {});
   showProviderFields();
   $("modal-bg").classList.add("show");
 };
@@ -1785,10 +1802,33 @@ $("s-save").onclick = async () => {
     weather_city: $("s-weather-city").value.trim() || "Antalya",
     weather_lat: parseFloat($("s-weather-lat").value) || 36.90,
     weather_lon: parseFloat($("s-weather-lon").value) || 30.70,
+    obsidian_enabled: $("s-obs-on").checked,
+    obsidian_vault_path: $("s-obs-path").value.trim(),
   });
   applyTheme($("s-theme").value);
   $("modal-bg").classList.remove("show");
   blip(980, .08);
+};
+$("s-obs-sync").onclick = async () => {
+  $("obs-status").innerHTML = "⏳ Eşitleniyor...";
+  try {
+    const r = await window.pywebview.api.obsidian_sync_now();
+    if (r.ok) {
+      let m = "✅ Eşitlendi (" + r.zaman + ") — dışarı: " + r.disari + " · içeri: " + r.iceri + " · yeni: " + r.yeni;
+      if (r.geri_yazilan) m += " · geri yazılan: " + r.geri_yazilan;
+      if (r.cakisma) m += " · ⚠️ çakışma: " + r.cakisma + " (senin sürümün yanına kopyalandı)";
+      if (r.uyarilar && r.uyarilar.length) m += "<br>⚠️ " + r.uyarilar.join("<br>⚠️ ");
+      m += "<br>📁 " + r.vault;
+      $("obs-status").innerHTML = m;
+      await refreshState();
+    } else $("obs-status").innerHTML = "⚠️ " + (r.error || "eşitleme başarısız");
+  } catch (e) { $("obs-status").innerHTML = "⚠️ Hata: " + e; }
+};
+$("s-obs-open").onclick = async () => {
+  try {
+    const r = await window.pywebview.api.open_vault();
+    $("obs-status").innerHTML = r.ok ? "📂 Açıldı: " + r.path : "⚠️ " + (r.error || "açılamadı");
+  } catch (e) { $("obs-status").innerHTML = "⚠️ Hata: " + e; }
 };
 $("s-briefing-test").onclick = async () => {
   $("briefing-status").innerHTML = "⏳ Brifing hazırlanıyor (hava durumu çekiliyor)...";

@@ -7,6 +7,7 @@ Argumanlar:
 """
 import base64
 import json
+import os
 import re
 import shutil
 import socket
@@ -18,7 +19,8 @@ from pathlib import Path
 import webview
 
 from mason import (agent, briefing, chats, documents, graph, ics_export,
-                   memory, planner, reminders, voice, wakeword, weather)
+                   memory, obsidian, planner, reminders, voice, wakeword,
+                   weather)
 from mason.config import load_config, save_config
 from mason.database import get_conn
 
@@ -590,6 +592,34 @@ class Api:
         st["embed_model_ok"] = st["running"] and has(emb_model)
         return st
 
+    # ---- Obsidian koprusu (Faz B) ----
+    def obsidian_sync_now(self) -> dict:
+        """ŞİMDİ EŞİTLE butonu: vault <-> veritabani tam esitleme."""
+        try:
+            cfg = load_config()
+            if not cfg.get("obsidian_enabled", True):
+                return {"ok": False, "error": "Obsidian köprüsü ayarlardan kapalı"}
+            return obsidian.full_sync(cfg)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def obsidian_status(self) -> dict:
+        """Son esitlemenin ozeti (ayarlardaki durum satiri)."""
+        st = obsidian.sync_status()
+        st["vault"] = str(obsidian.vault_path(load_config()))
+        st["enabled"] = bool(load_config().get("obsidian_enabled", True))
+        return st
+
+    def open_vault(self) -> dict:
+        """Vault klasorunu Windows Gezgini'nde acar (yoksa olusturur)."""
+        try:
+            p = obsidian.vault_path(load_config())
+            p.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(p))  # Windows
+            return {"ok": True, "path": str(p)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ---- Ses (Faz 2) ----
     def voice_status(self) -> dict:
         st = voice.status()
@@ -1014,6 +1044,25 @@ def _briefing_loop() -> None:
         time.sleep(60)
 
 
+def _obsidian_loop() -> None:
+    """Arka plan Obsidian esitlemesi: acilista bir kez, sonra periyodik.
+    Yalnizca degisen dosyalara dokunur (hash karsilastirmasi) - ucuzdur.
+    Kapaliysa hicbir sey yapmaz; ayar degisince bir sonraki turda uyanir."""
+    time.sleep(8)  # acilis otursun (DB migrasyonlari vs.)
+    while True:
+        try:
+            cfg = load_config()
+            if cfg.get("obsidian_enabled", True):
+                obsidian.full_sync(cfg)
+        except Exception:
+            pass  # esitleme hatasi uygulamayi asla dusurmesin
+        try:
+            wait = int(load_config().get("obsidian_sync_interval_sec", 60))
+        except Exception:
+            wait = 60
+        time.sleep(max(15, wait))
+
+
 def _on_started():
     """Pencere acildiktan sonra arka plan servislerini baslat."""
     try:
@@ -1024,6 +1073,7 @@ def _on_started():
     threading.Thread(target=_watch_show_trigger, daemon=True).start()
     threading.Thread(target=_reminder_loop, daemon=True).start()
     threading.Thread(target=_briefing_loop, daemon=True).start()
+    threading.Thread(target=_obsidian_loop, daemon=True).start()
     _start_tray()
     _start_wake_listener()
     # --show verilmediyse ve ayar gizli baslat ise: tepsiye gizlen (dinlemeye devam)

@@ -49,6 +49,10 @@ DEFAULTS = {
     "weather_lon": 30.70,                  # boylam
     # Faz 5 - bildirimler
     "notify_native": True,                 # Windows yerel toast bildirimi denensin mi
+    # Faz B - Obsidian koprusu (hafizanin markdown vault aynasi)
+    "obsidian_enabled": True,              # vault esitleme acik mi
+    "obsidian_vault_path": "",             # bos = proje yanindaki MasonVault klasoru
+    "obsidian_sync_interval_sec": 60,      # arka plan esitleme araligi (sn, en az 15)
 }
 
 

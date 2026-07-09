@@ -23,5 +23,8 @@
   "theme": "cyan",
   "continuous_mode": true,
   "continuous_window_sec": 8,
-  "continuous_window_reply_sec": 15
+  "continuous_window_reply_sec": 15,
+  "obsidian_enabled": true,
+  "obsidian_vault_path": "",
+  "obsidian_sync_interval_sec": 60
 }

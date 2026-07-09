@@ -23,6 +23,9 @@ yedekler/
 belgeler/
 disari_aktar/
 
+# Obsidian vault aynasi (kisisel hafizanin markdown kopyasi - Faz B)
+MasonVault/
+
 # Sanal ortam (varsa)
 venv/
 .venv/

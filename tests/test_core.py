@@ -500,4 +500,117 @@ _g3 = brain_graph.build_graph(include_tasks=False)
 check("graph: include_tasks=False görevleri atlar",
       not any(n["type"] == "task" for n in _g3["nodes"]))
 
+# ---------- Faz B: Obsidian köprüsü (obsidian.py) ----------
+from mason import obsidian
+
+# Testte ağ çağrısı olmasın: embedding üretimini kapat
+memory.embed_text = lambda *a, **k: None
+
+_vault = Path(tempfile.mkdtemp()) / "TestVault"
+_ocfg = {"obsidian_vault_path": str(_vault)}
+
+_ob_mid = memory.remember("Obsidian testi: köprü bilgisi", "fact", "MASON")
+_r1 = obsidian.full_sync(_ocfg)
+check("obsidian: ilk eşitleme çalışır", _r1["ok"] and _r1["disari"] > 0)
+_mem_files = list((_vault / "Hafıza").glob("*.md"))
+check("obsidian: her hafıza bir not dosyası",
+      any(f"(m{_ob_mid})" in f.name for f in _mem_files))
+check("obsidian: Görevler.md oluşur", (_vault / "Görevler.md").exists())
+check("obsidian: proje merkez notu oluşur",
+      (_vault / "Projeler" / "MASON.md").exists())
+_ob_file = [f for f in _mem_files if f"(m{_ob_mid})" in f.name][0]
+_otxt = _ob_file.read_text(encoding="utf-8")
+check("obsidian: notta mason_id + [[proje]] bağlantısı",
+      f"mason_id: {_ob_mid}" in _otxt and "[[MASON]]" in _otxt)
+
+# Hiçbir şey değişmediyse ikinci eşitleme dosyaya dokunmaz
+_r2 = obsidian.full_sync(_ocfg)
+check("obsidian: değişiklik yoksa dosya yazılmaz",
+      _r2["disari"] == 0 and _r2["iceri"] == 0 and _r2["yeni"] == 0)
+
+# Vault'ta düzenleme -> hafızaya geri okunur (iki yönlülüğün kalbi)
+_ob_file.write_text(_otxt.replace("köprü bilgisi", "köprü bilgisi GÜNCEL"),
+                    encoding="utf-8")
+_r3 = obsidian.full_sync(_ocfg)
+_ob_m = [m for m in memory.all_memories() if m["id"] == _ob_mid][0]
+check("obsidian: vault düzenlemesi hafızaya işlenir",
+      _r3["iceri"] == 1 and "GÜNCEL" in _ob_m["content"])
+
+# Vault'tan dosya silmek hafızayı SİLMEZ: dosya geri yazılır (şifre baypası yok)
+_ob_file.unlink()
+_r4 = obsidian.full_sync(_ocfg)
+check("obsidian: silinen not geri yazılır, hafıza silinmez",
+      _r4["geri_yazilan"] == 1 and _ob_file.exists()
+      and any(m["id"] == _ob_mid for m in memory.all_memories()))
+
+# Vault'a bırakılan mason_id'siz yeni not -> hafızaya eklenir
+(_vault / "Hafıza" / "El notum.md").write_text(
+    "---\nkategori: hedef\nproje: Okul\n---\n\nObsidian'dan eklenen hedef",
+    encoding="utf-8")
+_r5 = obsidian.full_sync(_ocfg)
+check("obsidian: vault'a bırakılan yeni not hafızaya eklenir",
+      _r5["yeni"] >= 1 and any(
+          m["content"] == "Obsidian'dan eklenen hedef" and m["category"] == "goal"
+          and m["project"] == "Okul" for m in memory.all_memories()))
+
+# Görevler.md: kutu işaretle -> tamamlanır; yeni satır -> yeni görev
+_ob_tid = planner.add_task("Obsidian testi görevi", "MASON", 2)
+obsidian.full_sync(_ocfg)
+_gtxt = (_vault / "Görevler.md").read_text(encoding="utf-8")
+check("obsidian: görev satırı id imzalı (tN)", f"(t{_ob_tid})" in _gtxt)
+_gtxt = _gtxt.replace(f"- [ ] Obsidian testi görevi (t{_ob_tid})",
+                      f"- [x] Obsidian testi görevi (t{_ob_tid})")
+_gtxt += "\n- [ ] Vault'tan eklenen görev 📅 2026-08-01\n"
+(_vault / "Görevler.md").write_text(_gtxt, encoding="utf-8")
+obsidian.full_sync(_ocfg)
+check("obsidian: kutucuk işaretlemek görevi tamamlar",
+      any(t["id"] == _ob_tid for t in planner.list_tasks("done")))
+check("obsidian: vault'a yazılan satır yeni görev olur",
+      any(t["title"] == "Vault'tan eklenen görev" and t["due_date"] == "2026-08-01"
+          for t in planner.list_tasks("open")))
+
+# Çakışma: iki taraf da değiştiyse DB kazanır, kullanıcı sürümü yedeklenir
+memory.update_memory(_ob_mid, content="Obsidian çakışma: DB tarafı")
+_ob_file.write_text(
+    _ob_file.read_text(encoding="utf-8").replace("GÜNCEL", "VAULT tarafı"),
+    encoding="utf-8")
+_r6 = obsidian.full_sync(_ocfg)
+check("obsidian: çakışmada DB kazanır + kullanıcı sürümü kopyalanır",
+      _r6["cakisma"] == 1
+      and "DB tarafı" in _ob_file.read_text(encoding="utf-8")
+      and any("(çakışma)" in f.name for f in (_vault / "Hafıza").glob("*.md")))
+
+# Planlar dışa aktarılır; vault'tan içerik düzenlemesi geri okunur
+_plan_files = list((_vault / "Planlar").glob("*.md"))
+check("obsidian: planlar dışa aktarılır",
+      any(f"(p{_upid})" in f.name for f in _plan_files))
+_pfile = [f for f in _plan_files if f"(p{_upid})" in f.name][0]
+_pfile.write_text(
+    _pfile.read_text(encoding="utf-8").replace("yeni içerik",
+                                               "obsidian'dan düzenlendi"),
+    encoding="utf-8")
+obsidian.full_sync(_ocfg)
+_up2 = [p for p in planner.list_plans() if p["id"] == _upid][0]
+check("obsidian: plan içeriği vault'tan güncellenir",
+      "obsidian'dan düzenlendi" in _up2["content"])
+
+# Uygulama içinden silinen hafızanın notu vault'tan da kalkar
+_el_mid = [m for m in memory.all_memories()
+           if m["content"] == "Obsidian'dan eklenen hedef"][0]["id"]
+memory.forget(_el_mid)
+obsidian.full_sync(_ocfg)
+check("obsidian: uygulamadan silinen hafızanın notu vault'tan kalkar",
+      not (_vault / "Hafıza" / "El notum.md").exists())
+
+# Ayrıştırıcı birim testleri
+_pt = obsidian._parse_task_line("- [x] Deneme görevi 📅 2026-08-01 🔁 (t7)")
+check("obsidian: görev satırı ayrıştırma (id/durum/tarih/başlık)",
+      _pt["id"] == 7 and _pt["done"] and _pt["due"] == "2026-08-01"
+      and _pt["title"] == "Deneme görevi")
+_fm, _bd = obsidian._frontmatter("---\nmason_id: 5\nproje: X\n---\n\ngövde")
+check("obsidian: frontmatter ayrıştırma",
+      _fm["mason_id"] == "5" and _fm["proje"] == "X" and _bd.strip() == "gövde")
+check("obsidian: dosya adı Windows/Obsidian güvenli",
+      obsidian._safe_name('a<>:"/\\|?*b') == "a b")
+
 print(f"\nTUM TESTLER GECTI ({passed}/{passed})")

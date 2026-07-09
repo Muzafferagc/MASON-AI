@@ -83,7 +83,7 @@ check("bozuk json sessizce atlanir", agent.execute_actions("{bozuk!!") == ([], [
 
 # Sifre korumali toplu hafiza silme: HEMEN silinmez, hepsi pending doner
 _before = memory.all_memory_ids()
-_done, _pending, _ptasks = agent.execute_actions('{"actions":[{"type":"clear_memory"}]}', {"memory_password": "1234"})
+_done, _pending, _ptasks = agent.execute_actions('{"actions":[{"type":"clear_memory"}]}', {"memory_password": "1234"}, "tüm hafızayı sil")
 check("clear_memory korumali modda pending doner", set(_pending) == set(_before) and len(_before) > 0)
 check("clear_memory korumali modda henuz silmez", memory.all_memory_ids() == _before)
 
@@ -91,13 +91,13 @@ check("clear_memory korumali modda henuz silmez", memory.all_memory_ids() == _be
 _open_before = [t["id"] for t in planner.list_tasks("all")]
 _did = _open_before[0]
 _done, _pf, _pt = agent.execute_actions(
-    '{"actions":[{"type":"delete_task","id":%d}]}' % _did, {"memory_password": "1234"})
+    '{"actions":[{"type":"delete_task","id":%d}]}' % _did, {"memory_password": "1234"}, "bu görevi sil")
 check("delete_task korumali modda pending doner", _pt == [_did])
 check("delete_task korumali modda henuz silmez",
       [t["id"] for t in planner.list_tasks("all")] == _open_before)
 
 # clear_tasks: korumasiz modda tum gorevleri siler
-_done, _pf, _pt = agent.execute_actions('{"actions":[{"type":"clear_tasks"}]}')
+_done, _pf, _pt = agent.execute_actions('{"actions":[{"type":"clear_tasks"}]}', None, "tüm görevleri sil")
 check("clear_tasks korumasiz modda hepsini siler",
       len(planner.list_tasks("all")) == 0 and _pt == [])
 # testlerin devami icin gorevleri geri koy
@@ -469,5 +469,35 @@ check("update_plan: başlık + içerik güncellenir",
 
 # ---------- Faz 8: Konum algılama fonksiyonu mevcut ----------
 check("weather: detect_location fonksiyonu var", hasattr(weather, "detect_location"))
+
+# ---------- Faz A: Beyin / bilgi grafiği (graph.py) ----------
+from mason import graph as brain_graph
+
+# Temiz bir zeminde grafik testi (mevcut DB durumundan bağımsız kontroller)
+_g_mid1 = memory.remember("Grafik testi: kalkülüs vize", "goal", "Okul")
+_g_mid2 = memory.remember("Grafik testi: lineer cebir ödev", "fact", "Okul")
+_g_tid = planner.add_task("Grafik testi: ders çalış", "Okul", 2)
+_g = brain_graph.build_graph()
+_node_ids = {n["id"] for n in _g["nodes"]}
+check("graph: her hafiza bir düğüm", f"m:{_g_mid1}" in _node_ids and f"m:{_g_mid2}" in _node_ids)
+check("graph: proje merkez düğümü oluşur", "p:Okul" in _node_ids)
+check("graph: projeli görev düğümü + bağı",
+      f"t:{_g_tid}" in _node_ids and
+      any(e["source"] == f"t:{_g_tid}" and e["target"] == "p:Okul" for e in _g["edges"]))
+check("graph: hafıza→proje 'belongs' bağı",
+      any(e["source"] == f"m:{_g_mid1}" and e["target"] == "p:Okul"
+          and e["type"] == "belongs" for e in _g["edges"]))
+check("graph: stats sayaçları tutarlı",
+      _g["stats"]["memories"] == len(memory.all_memories()) and
+      _g["stats"]["links"] == len(_g["edges"]))
+# Projesiz görev grafiğe eklenmez (kalabalık olmasın)
+_g_tid2 = planner.add_task("Grafik testi: projesiz iş", None, 3)
+_g2 = brain_graph.build_graph()
+check("graph: projesiz görev düğüm oluşturmaz",
+      f"t:{_g_tid2}" not in {n["id"] for n in _g2["nodes"]})
+# include_tasks=False → hiç görev düğümü yok
+_g3 = brain_graph.build_graph(include_tasks=False)
+check("graph: include_tasks=False görevleri atlar",
+      not any(n["type"] == "task" for n in _g3["nodes"]))
 
 print(f"\nTUM TESTLER GECTI ({passed}/{passed})")

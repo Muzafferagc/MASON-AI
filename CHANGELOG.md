@@ -12,6 +12,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · Sürümleme / Version
 
 ## [Unreleased] — Yayınlanmadı
 
+### Eklendi (Faz A — Beyin: canlı bilgi grafiği / knowledge graph)
+- **Yeni "BEYİN" sekmesi (Obsidian tarzı bilgi ağı):** Hafıza artık soyut bir liste değil; dock'taki **BEYİN** sekmesinde tıklanabilir, canlı bir grafik olarak görünüyor. Her bilgi bir **düğüm**, projeler merkez düğüm, görevler projelerine dal; **anlamca yakın iki bilgi birbirine ince bir iplikle** bağlanıyor (Obsidian'daki graph view mantığı). Force-directed fizik motoruyla düğümler nefes alır gibi yerleşir.
+- **Etkileşim:** düğümü **sürükle**, üzerine gelince komşuları vurgulanır + tam metin ipucu, **tıkla → hafıza detayını düzenle**, tekerlekle **yakınlaş/uzaklaş**, boşluğu sürükleyerek **kaydır**, üstteki kutuyla **ara** (eşleşen düğümler halkalanır), **⊹ ortala** ve **⟳ yenile**. Renkli lejant (proje/bilgi/hedef/tercih/görev), aktif temanın parıltı renklerine uyumlu.
+- **Sıfır maliyet / çevrimdışı:** Benzerlik bağları, hafızalarda **zaten kayıtlı embedding'lerden** hesaplanır — ekstra API çağrısı yok. Kütüphane bağımlılığı yok: grafik saf canvas + vanilla JS (tek dosya felsefesi korundu).
+- **Yeni:** `mason/graph.py` (node/edge üretimi + cosine benzerlik), `run.py` → `api.get_brain_graph()`, `ui/index.html` → BEYİN görünümü + canvas motoru. `test_core.py`'ye 7 grafik testi (toplam 138 doğrulama, hepsi geçiyor).
+
+### Düzeltildi (test paketi — silme-niyeti kapısı)
+- Faz 9'da `execute_actions`'a eklenen "gerçek silme niyeti" kapısı (`_has_delete_intent`), eski silme testlerini bozmuştu (testler `user_message` göndermiyordu → `wants_delete=False` → aksiyon atlanıyordu). İlgili 3 test artık silme niyeti içeren bir mesaj geçiyor; paket tekrar tam yeşil.
+
 ### Eklendi (Faz 9.1 — Beyin & kulak yükseltmesi: 14B model + Silero VAD)
 - **Yerel model 14B'ye çıktı:** Varsayılan `ollama_model` artık `qwen2.5:14b-instruct` (eski: `llama3.2` 3B). RTX 4070 + 64 GB için Türkçe dil kalitesi, akıl yürütme ve JSON aksiyon protokolüne sadakat kat kat daha iyi. Bağlam penceresi `ollama_num_ctx` 8192 → **12288**. Kod tamamen config-driven olduğu için tek değişiklik config'te. **Kullanmadan önce indir:** `ollama pull qwen2.5:14b-instruct` (~9 GB). VRAM sıkışırsa `ollama_num_ctx`'i düşür.
 - **Silero VAD ile gerçek konuşma-bitti algısı (`mason/vad.py`, yeni):** `wakeword.py` artık ham RMS enerji eşiği yerine (kuruluysa) Silero VAD ile "bu blok insan konuşması mı?" kararı veriyor — klavye/kapı/müzik gürültüsünü konuşma sanmaz, sen gerçekten susunca hızlı anlar. **İstege bağlı ve zarif:** paket yoksa otomatik eski enerji-eşiği yöntemine döner (uygulama yine çalışır; test edildi). Mason konuşurken barge-in/eko güvenliği için enerji yöntemi korunur. Ucuz ön-kapı ile tam sessizlikte VAD boşuna çağrılmaz. Yeni ayarlar: `vad_enabled` (vars. true), `vad_threshold` (vars. 0.5). Kurulum: `pip install silero-vad onnxruntime`.

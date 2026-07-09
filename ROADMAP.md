@@ -91,6 +91,39 @@ LLM prompt tasarımı, JSON ile "tool calling" mantığı.
 
 ---
 
+## "5 Tık Üst Düzey" — Premium Yükseltme Fazları (2026-07-09)
+
+Hedef: MASON'u "yüksek bütçeli bir firmanın asistanı" hissine taşımak. Sıra
+önemli — önce yeni parçaları ekliyoruz, en sonda hepsini tek tasarım diliyle
+cilalıyoruz.
+
+- **Faz A — Beyin (bilgi grafiği)** ✅ TAMAMLANDI
+  Hafıza artık tıklanabilir, canlı bir knowledge graph (Obsidian tarzı yıldız
+  kümesi). Projeler merkez, bilgiler dal, anlamca yakınlar birbirine bağlı.
+  Saf canvas, kütüphanesiz, çevrimdışı, sıfır API maliyeti. → `mason/graph.py`,
+  `api.get_brain_graph()`, `ui/index.html` BEYİN sekmesi.
+
+- **Faz B — Obsidian köprüsü** (sıradaki)
+  Hafızayı gerçek bir Obsidian vault'una markdown + `[[bağlantı]]` olarak iki
+  yönlü aynala. Beynini Obsidian'da gez/düzenle, MASON geri okusun.
+
+- **Faz C — Canlı his**
+  Cevaplar kelime kelime aksın (streaming), konuşurken nefes alan bir orb/küre
+  görselleştirmesi. "Ölü kutu" değil, düşünen bir varlık hissi.
+
+- **Faz D — Eller (MCP / araç kullanımı)**
+  MASON'a gerçek yetenekler: dosya/takvim/tarayıcı kontrolü (MCP + native tool
+  calling). Yerel model yükseltmesi (qwen2.5:14b) + Türkçe embedding (bge-m3).
+
+- **Faz E — Genel modernizasyon (kapanış hamlesi)** 🆕
+  A–D bittikten sonra tüm arayüzü tek bir modern tasarım sistemiyle baştan
+  cilala: tutarlı renk/boşluk/köşe token'ları, çağdaş tipografi düzeni, tutarlı
+  ikon seti, akıcı micro-interaction'lar (buton/panel/geçiş animasyonları),
+  daha ferah yerleşim. "2015 masaüstü programı" hissini silip "2026 premium
+  asistan" yüzeyine geçiş. Aynı MASON, pahalı bir ürün gibi görünen hali.
+
+---
+
 ## Ücretsiz Kalma Stratejisi
 
 | İhtiyaç | Ücretsiz çözüm |

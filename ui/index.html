@@ -160,6 +160,35 @@
   #panel-head { font-family: var(--hud); font-size: 11px; letter-spacing: 4px; color: var(--cyan); padding: 6px 22px 12px; display: flex; align-items: center; gap: 10px; }
   #panel-head::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, var(--stroke-2), transparent); }
   #panel { flex: 1; overflow-y: auto; padding: 4px 22px 12px; }
+
+  /* ====== BEYİN (bilgi grafigi / knowledge graph) ====== */
+  #brain-view { display: none; position: relative; width: 100%; max-width: 100%;
+    flex: 1; min-height: 0; flex-direction: column; }
+  #brain-head { display: flex; align-items: center; gap: 10px; padding: 6px 22px 8px;
+    font-family: var(--hud); font-size: 11px; letter-spacing: 3px; color: var(--cyan); }
+  #brain-head .bt { text-shadow: 0 0 12px rgba(var(--accentRGB), .5); white-space: nowrap; }
+  #brain-head .bspacer { flex: 1; }
+  #brain-stats { font-family: var(--mono); font-size: 10px; letter-spacing: .5px; color: var(--muted); }
+  #brain-search { width: 150px; background: rgba(var(--accentRGB), .06); border: 1px solid var(--stroke);
+    border-radius: 20px; color: var(--text); font-family: var(--body); font-size: 12px; padding: 5px 12px; outline: none; }
+  #brain-search:focus { border-color: var(--stroke-2); box-shadow: 0 0 14px rgba(var(--accentRGB), .18); }
+  #brain-head button { background: rgba(var(--accentRGB), .06); border: 1px solid var(--stroke); color: var(--cyan);
+    width: 30px; height: 30px; border-radius: 9px; cursor: pointer; font-size: 15px; line-height: 1; transition: .15s; }
+  #brain-head button:hover { background: rgba(var(--accentRGB), .14); box-shadow: 0 0 12px rgba(var(--accentRGB), .25); }
+  #brain-canvas { position: absolute; inset: 42px 0 0 0; width: 100%; display: block; cursor: grab; touch-action: none; }
+  #brain-canvas.grabbing { cursor: grabbing; }
+  #brain-canvas.pointing { cursor: pointer; }
+  #brain-legend { position: absolute; left: 22px; bottom: 14px; display: flex; flex-wrap: wrap; gap: 6px 14px;
+    font-family: var(--mono); font-size: 10px; color: var(--muted); pointer-events: none; letter-spacing: .5px; }
+  #brain-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  #brain-legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; box-shadow: 0 0 8px currentColor; }
+  #brain-empty { display: none; position: absolute; inset: 42px 0 0 0; align-items: center; justify-content: center;
+    text-align: center; padding: 0 18%; color: var(--muted); font-size: 13px; line-height: 1.7; pointer-events: none; }
+  #brain-tip { position: absolute; z-index: 5; max-width: 300px; display: none; pointer-events: none;
+    background: var(--glass-2); border: 1px solid var(--stroke-2); border-radius: 10px; padding: 8px 11px;
+    font-size: 12px; line-height: 1.5; color: var(--text); backdrop-filter: blur(8px); box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+  #brain-tip .tt-tag { font-family: var(--mono); font-size: 9px; letter-spacing: 1px; color: var(--cyan); display: block; margin-bottom: 3px; }
+  #brain-tip .tt-hint { display: block; margin-top: 5px; font-size: 10px; color: var(--muted); }
   .task-item { display: flex; gap: 11px; align-items: flex-start; padding: 14px 16px; background: var(--glass); border: 1px solid var(--stroke); border-radius: 13px; margin-bottom: 10px; transition: .25s; animation: msgIn .3s; backdrop-filter: blur(12px); }
   .task-item:hover { border-color: var(--stroke-2); background: rgba(var(--accentRGB),.05); }
   .task-item.done { opacity: .38; }
@@ -356,6 +385,20 @@
       <div id="panel-head">GÖREVLER</div>
       <div id="panel"></div>
     </div>
+    <div id="brain-view">
+      <div id="brain-head">
+        <span class="bt">BEYİN — BİLGİ AĞI</span>
+        <span id="brain-stats"></span>
+        <span class="bspacer"></span>
+        <input id="brain-search" placeholder="ara..." autocomplete="off">
+        <button id="brain-fit" title="Ortala / sığdır">⊹</button>
+        <button id="brain-refresh" title="Yenile">⟳</button>
+      </div>
+      <canvas id="brain-canvas"></canvas>
+      <div id="brain-legend"></div>
+      <div id="brain-empty">Beyin henüz boş. Mason'la konuştukça bilgiler burada birer düğüm olarak belirir ve anlamca yakın olanlar birbirine bağlanır.</div>
+      <div id="brain-tip"></div>
+    </div>
   </div>
 
   <div id="dock">
@@ -363,6 +406,7 @@
     <button class="nav-btn" data-view="chats">GEÇMİŞ<span class="cnt" id="c-chat"></span></button>
     <button class="nav-btn" data-view="tasks">GÖREVLER<span class="cnt" id="c-task"></span></button>
     <button class="nav-btn" data-view="calendar">TAKVİM</button>
+    <button class="nav-btn" data-view="brain">BEYİN</button>
     <button class="nav-btn" data-view="memory">HAFIZA<span class="cnt" id="c-mem"></span></button>
     <button class="nav-btn" data-view="plans">PLANLAR<span class="cnt" id="c-plan"></span></button>
     <button class="nav-btn" data-view="documents">BELGELER<span class="cnt" id="c-doc"></span></button>
@@ -1047,12 +1091,222 @@ $("detail-save").onclick = async () => {
 const PANEL_TITLE = { tasks: "GÖREVLER", memory: "HAFIZA BANKASI", plans: "PLANLAR", documents: "BELGE BANKASI", backups: "YEDEKLER", calendar: "TAKVİM", chats: "SOHBET GEÇMİŞİ" };
 function showView(v) {
   const isChat = v === "chat";
+  const isBrain = v === "brain";
   $("chat-view").style.display = isChat ? "flex" : "none";
-  $("panel-view").style.display = isChat ? "none" : "flex";
+  $("panel-view").style.display = (isChat || isBrain) ? "none" : "flex";
+  $("brain-view").style.display = isBrain ? "flex" : "none";
   document.querySelectorAll(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.view === v));
-  if (!isChat) { activeTab = v; $("panel-head").textContent = PANEL_TITLE[v] || ""; renderPanel(); }
+  if (isBrain) { Brain.open(); }
+  else { Brain.stop(); if (!isChat) { activeTab = v; $("panel-head").textContent = PANEL_TITLE[v] || ""; renderPanel(); } }
 }
 document.querySelectorAll(".nav-btn").forEach((b) => { b.onclick = () => showView(b.dataset.view); });
+
+/* ============ BEYİN — bilgi grafigi (force-directed, saf canvas) ============ */
+const Brain = (() => {
+  const cv = $("brain-canvas"), tip = $("brain-tip");
+  const ctx = cv.getContext("2d");
+  let nodes = [], edges = [], adj = new Map();
+  let raf = null, running = false;
+  let view = { x: 0, y: 0, k: 1 }, W = 0, H = 0;
+  let drag = null, dragMoved = false, panning = null;
+  let hover = null, highlight = new Set(), searchTerm = "", alpha = 1;
+  let accent = "60,231,255", react = "87,255,166";
+
+  const cssVar = (n, f) => (getComputedStyle(document.documentElement).getPropertyValue(n).trim() || f);
+  const typeRGB = (t) => t === "project" ? accent : t === "fact" ? react
+    : t === "goal" ? "251,207,114" : t === "preference" ? "157,139,255"
+    : t === "task" ? "120,150,175" : react;
+  const typeLabel = (t) => ({ project: "PROJE", goal: "HEDEF", preference: "TERCİH", fact: "BİLGİ", task: "GÖREV" }[t] || "BİLGİ");
+  const radiusFor = (n) => n.type === "project" ? 12 : n.type === "task" ? 5 : 6.5;
+
+  function resize() {
+    const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    W = r.width; H = r.height;
+    cv.width = Math.max(1, Math.floor(W * dpr));
+    cv.height = Math.max(1, Math.floor(H * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function buildFrom(g) {
+    const cx = W / 2, cy = H / 2, byId = new Map();
+    nodes = (g.nodes || []).map((n, i) => {
+      const ang = i * 2.399, rad = 16 * Math.sqrt(i + 1);
+      const nd = Object.assign({}, n, {
+        x: cx + rad * Math.cos(ang) + (Math.random() - .5) * 24,
+        y: cy + rad * Math.sin(ang) + (Math.random() - .5) * 24, vx: 0, vy: 0 });
+      byId.set(nd.id, nd); return nd;
+    });
+    edges = (g.edges || []).map((e) => ({ s: byId.get(e.source), t: byId.get(e.target), type: e.type, weight: e.weight || 0 }))
+      .filter((e) => e.s && e.t);
+    adj = new Map(); nodes.forEach((n) => adj.set(n.id, new Set()));
+    edges.forEach((e) => { adj.get(e.s.id).add(e.t.id); adj.get(e.t.id).add(e.s.id); });
+    const s = g.stats || {};
+    $("brain-stats").textContent = nodes.length
+      ? `${s.memories || 0} bilgi · ${s.projects || 0} proje · ${s.tasks || 0} görev · ${s.links || 0} bağ` : "";
+    $("brain-empty").style.display = nodes.length ? "none" : "flex";
+    alpha = 1;
+  }
+
+  function tick() {
+    const cx = W / 2, cy = H / 2, rep = 5400;
+    for (let i = 0; i < nodes.length; i++) {
+      const a = nodes[i];
+      for (let j = i + 1; j < nodes.length; j++) {
+        const b = nodes[j];
+        let dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy || .01;
+        if (d2 > 96000) continue;
+        const d = Math.sqrt(d2), f = rep / d2, ux = dx / d, uy = dy / d;
+        a.vx += ux * f; a.vy += uy * f; b.vx -= ux * f; b.vy -= uy * f;
+      }
+    }
+    for (const e of edges) {
+      const rest = e.type === "belongs" ? 66 : e.type === "task" ? 56 : 118;
+      const k = e.type === "similar" ? 0.009 * (e.weight || .72) : 0.021;
+      let dx = e.t.x - e.s.x, dy = e.t.y - e.s.y, d = Math.sqrt(dx * dx + dy * dy) || .01;
+      const f = (d - rest) * k, ux = dx / d, uy = dy / d;
+      e.s.vx += ux * f; e.s.vy += uy * f; e.t.vx -= ux * f; e.t.vy -= uy * f;
+    }
+    for (const n of nodes) {
+      n.vx += (cx - n.x) * 0.0016; n.vy += (cy - n.y) * 0.0016;
+      if (drag === n) { n.x = drag.tx; n.y = drag.ty; n.vx = 0; n.vy = 0; continue; }
+      n.vx *= 0.86; n.vy *= 0.86; n.x += n.vx * alpha; n.y += n.vy * alpha;
+    }
+    alpha *= 0.994; if (alpha < 0.06) alpha = 0.06;
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.save(); ctx.translate(view.x, view.y); ctx.scale(view.k, view.k);
+    for (const e of edges) {
+      const hot = highlight.size && highlight.has(e.s.id) && highlight.has(e.t.id);
+      let col = e.type === "similar" ? react : e.type === "task" ? "120,150,175" : accent;
+      let w = e.type === "similar" ? 0.5 + (e.weight - 0.7) * 2 : 0.8;
+      const base = highlight.size ? (hot ? 0.6 : 0.04) : (e.type === "similar" ? 0.24 : 0.15);
+      ctx.strokeStyle = `rgba(${col},${base})`; ctx.lineWidth = (hot ? w + 0.7 : w);
+      ctx.beginPath(); ctx.moveTo(e.s.x, e.s.y); ctx.lineTo(e.t.x, e.t.y); ctx.stroke();
+    }
+    for (const n of nodes) {
+      const r = radiusFor(n), rgb = typeRGB(n.type);
+      const dim = highlight.size && !highlight.has(n.id), a = dim ? 0.16 : 1;
+      const gr = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r * 3.4);
+      gr.addColorStop(0, `rgba(${rgb},${0.5 * a})`); gr.addColorStop(1, `rgba(${rgb},0)`);
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(n.x, n.y, r * 3.4, 0, 7); ctx.fill();
+      ctx.fillStyle = `rgba(${rgb},${a})`; ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 7); ctx.fill();
+      ctx.strokeStyle = `rgba(240,252,255,${0.28 * a})`; ctx.lineWidth = 1; ctx.stroke();
+      if (searchTerm && n.full && n.full.toLowerCase().includes(searchTerm)) {
+        ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(n.x, n.y, r + 4, 0, 7); ctx.stroke();
+      }
+    }
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (const n of nodes) {
+      const isProj = n.type === "project";
+      const near = hover && (n === hover || adj.get(hover.id)?.has(n.id));
+      const match = searchTerm && n.full && n.full.toLowerCase().includes(searchTerm);
+      if (!(isProj || near || view.k > 1.5 || match)) continue;
+      const dim = highlight.size && !highlight.has(n.id);
+      const fs = isProj ? 12 : 10;
+      ctx.font = `${isProj ? 600 : 400} ${fs}px Inter, sans-serif`;
+      const ty = n.y + radiusFor(n) + 3;
+      ctx.lineWidth = fs * 0.42; ctx.strokeStyle = `rgba(2,5,10,${dim ? .3 : .85})`;
+      ctx.strokeText(n.label, n.x, ty);
+      ctx.fillStyle = isProj ? `rgba(${accent},${dim ? .3 : 1})` : `rgba(216,236,247,${dim ? .25 : .92})`;
+      ctx.fillText(n.label, n.x, ty);
+    }
+    ctx.restore();
+  }
+
+  function frame() { if (!running) return; tick(); render(); raf = requestAnimationFrame(frame); }
+  function start() { if (running) return; running = true; frame(); }
+  function stop() { running = false; if (raf) cancelAnimationFrame(raf); raf = null; hideTip(); }
+
+  const toWorld = (px, py) => ({ x: (px - view.x) / view.k, y: (py - view.y) / view.k });
+  function pick(px, py) {
+    const w = toWorld(px, py); let best = null, bd = Infinity;
+    for (const n of nodes) {
+      const r = radiusFor(n) + 6, dx = n.x - w.x, dy = n.y - w.y, d = dx * dx + dy * dy;
+      if (d < r * r && d < bd) { bd = d; best = n; }
+    }
+    return best;
+  }
+  function setHover(n, px, py) {
+    hover = n; highlight = new Set();
+    if (n) { highlight.add(n.id); (adj.get(n.id) || []).forEach((id) => highlight.add(id)); showTip(n, px, py); }
+    else hideTip();
+  }
+  function hideTip() { tip.style.display = "none"; }
+  function showTip(n, px, py) {
+    let extra = "";
+    if (n.project && n.type !== "project") extra += `<span class="tt-hint">proje: ${_esc(n.project)}</span>`;
+    if (n.note) extra += `<span class="tt-hint">📝 ${_esc(n.note)}</span>`;
+    const hint = n.mem_id != null ? '<span class="tt-hint">↳ düzenlemek için tıkla</span>' : "";
+    tip.innerHTML = `<span class="tt-tag">${typeLabel(n.type)}</span>${_esc(n.full)}${extra}${hint}`;
+    tip.style.display = "block";
+    const bw = tip.offsetWidth, bh = tip.offsetHeight;
+    let L = px + 16, T = py + 42 + 14;
+    if (L + bw > W - 8) L = px - bw - 16;
+    if (T + bh > H + 42 - 8) T = py + 42 - bh - 8;
+    tip.style.left = Math.max(6, L) + "px"; tip.style.top = Math.max(6, T) + "px";
+  }
+
+  cv.addEventListener("pointerdown", (ev) => {
+    cv.setPointerCapture(ev.pointerId);
+    const n = pick(ev.offsetX, ev.offsetY);
+    if (n) { drag = n; drag.tx = n.x; drag.ty = n.y; dragMoved = false; alpha = Math.max(alpha, 0.4); }
+    else { panning = { x: ev.offsetX, y: ev.offsetY, vx: view.x, vy: view.y }; }
+    cv.classList.add("grabbing");
+  });
+  cv.addEventListener("pointermove", (ev) => {
+    if (drag) { const w = toWorld(ev.offsetX, ev.offsetY); drag.tx = w.x; drag.ty = w.y; dragMoved = true; alpha = Math.max(alpha, 0.3); return; }
+    if (panning) { view.x = panning.vx + (ev.offsetX - panning.x); view.y = panning.vy + (ev.offsetY - panning.y); return; }
+    const n = pick(ev.offsetX, ev.offsetY);
+    cv.classList.toggle("pointing", !!n); setHover(n, ev.offsetX, ev.offsetY);
+  });
+  function endPointer() {
+    cv.classList.remove("grabbing");
+    if (drag) { if (!dragMoved && drag.mem_id != null) openMemory(drag); drag = null; }
+    panning = null;
+  }
+  cv.addEventListener("pointerup", endPointer);
+  cv.addEventListener("pointercancel", endPointer);
+  cv.addEventListener("pointerleave", () => { if (!drag && !panning) setHover(null); });
+  cv.addEventListener("wheel", (ev) => {
+    ev.preventDefault();
+    const nk = Math.min(4, Math.max(0.2, view.k * Math.exp(-ev.deltaY * 0.0015))), r = nk / view.k;
+    view.x = ev.offsetX - (ev.offsetX - view.x) * r; view.y = ev.offsetY - (ev.offsetY - view.y) * r; view.k = nk;
+  }, { passive: false });
+
+  function openMemory(n) {
+    openDetail("memory", { id: n.mem_id, content: n.full, category: n.category, project: n.project, note: n.note },
+      "edit", () => reload());
+  }
+  function fit() {
+    if (!nodes.length) { view = { x: 0, y: 0, k: 1 }; return; }
+    let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
+    for (const n of nodes) { a = Math.min(a, n.x); b = Math.min(b, n.y); c = Math.max(c, n.x); d = Math.max(d, n.y); }
+    const gw = (c - a) || 1, gh = (d - b) || 1;
+    view.k = Math.min(2.4, Math.max(0.2, Math.min((W - 90) / gw, (H - 90) / gh)));
+    view.x = W / 2 - (a + gw / 2) * view.k; view.y = H / 2 - (b + gh / 2) * view.k;
+  }
+  function legend() {
+    $("brain-legend").innerHTML = [["project", "Proje"], ["fact", "Bilgi"], ["goal", "Hedef"], ["preference", "Tercih"], ["task", "Görev"]]
+      .map(([t, l]) => `<span style="color:rgb(${typeRGB(t)})"><i></i>${l}</span>`).join("");
+  }
+  async function load() {
+    let g; try { g = await window.pywebview.api.get_brain_graph(); } catch (e) { g = { nodes: [], edges: [] }; }
+    buildFrom(g);
+  }
+  async function reload() { await load(); setTimeout(fit, 450); }
+  async function open() {
+    accent = cssVar("--accentRGB", "60,231,255"); react = cssVar("--reactRGB", "87,255,166");
+    resize(); legend(); start(); await reload();
+  }
+  $("brain-search").addEventListener("input", (e) => { searchTerm = e.target.value.trim().toLowerCase(); });
+  $("brain-refresh").onclick = () => reload();
+  $("brain-fit").onclick = fit;
+  window.addEventListener("resize", () => { if (running) resize(); });
+  return { open, stop };
+})();
 
 /* ============ BELGE YUKLEME (dosya -> RAG belge hafizasi) ============ */
 function toast(msg, kind) {

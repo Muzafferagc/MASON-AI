@@ -17,8 +17,8 @@ from pathlib import Path
 
 import webview
 
-from mason import (agent, briefing, chats, documents, ics_export, memory,
-                   planner, reminders, voice, wakeword, weather)
+from mason import (agent, briefing, chats, documents, graph, ics_export,
+                   memory, planner, reminders, voice, wakeword, weather)
 from mason.config import load_config, save_config
 from mason.database import get_conn
 
@@ -482,6 +482,15 @@ class Api:
             "plans": planner.list_plans(),
             "documents": documents.list_documents(),
         }
+
+    def get_brain_graph(self) -> dict:
+        """MASON'un beyni: hafiza+proje+gorevlerden bilgi grafigi (node/edge).
+        Anlamsal benzerlik baglari kayitli embedding'lerden hesaplanir -
+        ekstra API cagrisi/maliyet yok."""
+        try:
+            return graph.build_graph()
+        except Exception as e:
+            return {"nodes": [], "edges": [], "stats": {}, "error": str(e)}
 
     def toggle_task(self, task_id: int, done: bool) -> dict:
         # Tekrarlayan gorev tamamlanirsa sonraki tarih otomatik olusur
